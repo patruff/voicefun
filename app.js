@@ -24,6 +24,7 @@ let db;
 let slots = [];
 let transcript = [];
 let currentStoryIndex = 0;
+let currentVoiceboxAudio = null;
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -163,6 +164,10 @@ function stopSpeech() {
   if ("speechSynthesis" in window) {
     window.speechSynthesis.cancel();
   }
+  if (currentVoiceboxAudio) {
+    currentVoiceboxAudio.pause();
+    currentVoiceboxAudio = null;
+  }
   currentStoryIndex = 0;
   storyStatus.textContent = "Stopped";
 }
@@ -239,7 +244,31 @@ async function speakWithVoicebox(slot, text) {
   });
   const generation = await response.json();
   await pollGeneration(generation.id);
+  await playVoiceboxAudio(generation.id);
   return generation;
+}
+
+async function playVoiceboxAudio(generationId) {
+  const response = await voiceboxFetch(`/audio/${generationId}`);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const audio = new Audio(url);
+
+  if (currentVoiceboxAudio) {
+    currentVoiceboxAudio.pause();
+  }
+  currentVoiceboxAudio = audio;
+
+  await new Promise((resolve, reject) => {
+    audio.addEventListener("ended", resolve, { once: true });
+    audio.addEventListener("error", () => reject(new Error("Voicebox audio playback failed.")), { once: true });
+    audio.play().catch(reject);
+  });
+
+  URL.revokeObjectURL(url);
+  if (currentVoiceboxAudio === audio) {
+    currentVoiceboxAudio = null;
+  }
 }
 
 function hasVoiceboxProfile(slot) {
