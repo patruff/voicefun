@@ -3,13 +3,16 @@ const DB_VERSION = 1;
 const STORE = "voices";
 const SLOT_COUNT = 9;
 const DEFAULT_STORY_ENDPOINT = "/api/story";
+const DEFAULT_VOICEBOX_URL = "http://127.0.0.1:17493";
 const STORY_ENDPOINT_KEY = "voicefun-story-endpoint";
+const VOICEBOX_URL_KEY = "voicefun-voicebox-url";
 
 const board = document.querySelector("#voiceBoard");
 const template = document.querySelector("#voiceSlotTemplate");
 const exportJson = document.querySelector("#exportJson");
 const mustUsePhrases = document.querySelector("#mustUsePhrases");
 const llmEndpoint = document.querySelector("#llmEndpoint");
+const voiceboxUrl = document.querySelector("#voiceboxUrl");
 const tellStory = document.querySelector("#tellStory");
 const playStory = document.querySelector("#playStory");
 const stopStory = document.querySelector("#stopStory");
@@ -81,8 +84,11 @@ function defaultSlot(index) {
     index,
     name: "",
     text: "",
+    referenceText: "",
     fileName: "",
     blob: null,
+    voiceboxProfileId: "",
+    voiceboxProfileName: "",
     updatedAt: Date.now()
   };
 }
@@ -111,6 +117,43 @@ async function persistField(index, updates) {
   await saveVoice(slots[index]);
 }
 
+function voiceboxBaseUrl() {
+  const value = voiceboxUrl.value.trim().replace(/\/$/, "") || DEFAULT_VOICEBOX_URL;
+  localStorage.setItem(VOICEBOX_URL_KEY, value);
+  return value;
+}
+
+async function voiceboxFetch(path, options = {}) {
+  const response = await fetch(`${voiceboxBaseUrl()}${path}`, {
+    ...options,
+    headers: {
+      "X-Voicebox-Client-Id": "voicefun",
+      ...(options.headers || {})
+    }
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`Voicebox ${response.status}: ${detail || response.statusText}`);
+  }
+
+  return response;
+}
+
+function setSlotStatus(index, message) {
+  const article = board.querySelector(`.voice-slot[data-slot="${index + 1}"]`);
+  const status = article?.querySelector(".slot-status");
+  if (status) status.textContent = message;
+}
+
+function voiceboxHelp(error) {
+  return [
+    error.message,
+    "Make sure Voicebox is running on 127.0.0.1:17493.",
+    "For GitHub Pages, launch Voicebox with VOICEBOX_CORS_ORIGINS=https://patruff.github.io."
+  ].join(" ");
+}
+
 function stopSpeech() {
   if ("speechSynthesis" in window) {
     window.speechSynthesis.cancel();
@@ -119,27 +162,79 @@ function stopSpeech() {
   storyStatus.textContent = "Stopped";
 }
 
-function playSlot(index) {
+async function pollGeneration(id) {
+  if (!id) return;
+
+  for (let attempt = 0; attempt < 180; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const response = await voiceboxFetch(`/generate/${id}/status`);
+    const payload = await response.json();
+
+    if (["completed", "failed", "cancelled"].includes(payload.status)) {
+      if (payload.status !== "completed") {
+        throw new Error(`Voicebox generation ${payload.status}`);
+      }
+      return payload;
+    }
+  }
+
+  throw new Error("Voicebox generation timed out");
+}
+
+async function speakWithVoicebox(slot, text) {
+  const profile = slot.voiceboxProfileId || slot.voiceboxProfileName || slot.name;
+  if (!profile) {
+    throw new Error("No Voicebox profile is linked for this slot.");
+  }
+
+  const response = await voiceboxFetch("/speak", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text,
+      profile,
+      language: "en"
+    })
+  });
+  const generation = await response.json();
+  await pollGeneration(generation.id);
+  return generation;
+}
+
+async function playSlot(index) {
   const slot = slots[index];
   const text = slot.text.trim();
-
-  if (!("speechSynthesis" in window)) {
-    window.alert("This browser does not support text playback.");
-    return;
-  }
 
   if (!text) {
     window.alert("Write some text in this voice slot first.");
     return;
   }
 
-  stopSpeech();
-  const utterance = new SpeechSynthesisUtterance(text);
-  const voice = getSpeechVoice(index);
-  if (voice) utterance.voice = voice;
-  utterance.rate = 1;
-  utterance.pitch = 1;
-  window.speechSynthesis.speak(utterance);
+  if (slot.voiceboxProfileId || slot.voiceboxProfileName) {
+    try {
+      setSlotStatus(index, "Voicebox speaking");
+      await speakWithVoicebox(slot, text);
+      setSlotStatus(index, "Voicebox ready");
+      return;
+    } catch (error) {
+      setSlotStatus(index, "Voicebox error");
+      window.alert(voiceboxHelp(error));
+      return;
+    }
+  }
+
+  if ("speechSynthesis" in window) {
+    stopSpeech();
+    const utterance = new SpeechSynthesisUtterance(text);
+    const voice = getSpeechVoice(index);
+    if (voice) utterance.voice = voice;
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    window.speechSynthesis.speak(utterance);
+    setSlotStatus(index, "Browser voice");
+  } else {
+    window.alert("Sync this slot with Voicebox before playback.");
+  }
 }
 
 function getPhrases() {
@@ -319,7 +414,7 @@ async function makeStory() {
   }
 }
 
-function speakTranscriptLine() {
+async function speakTranscriptLine() {
   if (!transcript.length || currentStoryIndex >= transcript.length) {
     currentStoryIndex = 0;
     storyStatus.textContent = "Finished";
@@ -328,25 +423,36 @@ function speakTranscriptLine() {
 
   const line = transcript[currentStoryIndex];
   const speaker = speakerForLine(line);
-  const utterance = new SpeechSynthesisUtterance(line.text);
-  const voice = getSpeechVoice(speaker.slotIndex);
-  if (voice) utterance.voice = voice;
-  utterance.rate = 1;
-  utterance.pitch = 1;
   storyStatus.textContent = `Playing ${speaker.name}`;
-  utterance.onend = () => {
+
+  if (slots[speaker.slotIndex]?.voiceboxProfileId || slots[speaker.slotIndex]?.voiceboxProfileName) {
+    try {
+      await speakWithVoicebox(slots[speaker.slotIndex], line.text);
+    } catch (error) {
+      storyStatus.textContent = "Voicebox error";
+      window.alert(voiceboxHelp(error));
+      return;
+    }
     currentStoryIndex += 1;
     speakTranscriptLine();
-  };
-  window.speechSynthesis.speak(utterance);
-}
-
-function playTranscript() {
-  if (!("speechSynthesis" in window)) {
-    window.alert("This browser does not support story playback.");
     return;
   }
 
+  if ("speechSynthesis" in window) {
+    const utterance = new SpeechSynthesisUtterance(line.text);
+    const voice = getSpeechVoice(speaker.slotIndex);
+    if (voice) utterance.voice = voice;
+    utterance.rate = 1;
+    utterance.pitch = 1;
+    utterance.onend = () => {
+      currentStoryIndex += 1;
+      speakTranscriptLine();
+    };
+    window.speechSynthesis.speak(utterance);
+  }
+}
+
+function playTranscript() {
   if (!transcript.length) {
     window.alert("Tell a story first.");
     return;
@@ -357,6 +463,95 @@ function playTranscript() {
   speakTranscriptLine();
 }
 
+async function syncVoiceboxProfile(index) {
+  const slot = slots[index];
+  const name = (slot.name || `VoiceFun ${index + 1}`).trim();
+
+  if (!slot.blob) {
+    window.alert("Upload a WAV reference clip first.");
+    return;
+  }
+
+  if (!slot.referenceText.trim()) {
+    window.alert("Add the exact reference transcript for the WAV before syncing Voicebox.");
+    return;
+  }
+
+  setSlotStatus(index, "Syncing");
+
+  try {
+    const profilesResponse = await voiceboxFetch("/profiles");
+    const profiles = await profilesResponse.json();
+    const existing = profiles.find((profile) => profile.name?.toLowerCase() === name.toLowerCase());
+    let profile = existing;
+
+    if (!profile) {
+      const createResponse = await voiceboxFetch("/profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          voice_type: "cloned",
+          language: "en"
+        })
+      });
+      profile = await createResponse.json();
+    }
+
+    const formData = new FormData();
+    formData.append("file", slot.blob, slot.fileName || `${name}.wav`);
+    formData.append("reference_text", slot.referenceText.trim());
+
+    await voiceboxFetch(`/profiles/${profile.id}/samples`, {
+      method: "POST",
+      body: formData
+    });
+
+    await persistField(index, {
+      voiceboxProfileId: profile.id,
+      voiceboxProfileName: profile.name || name,
+      name
+    });
+    setSlotStatus(index, "Voicebox ready");
+  } catch (error) {
+    setSlotStatus(index, "Voicebox error");
+    window.alert(voiceboxHelp(error));
+  }
+}
+
+async function transcribeReference(index) {
+  const slot = slots[index];
+
+  if (!slot.blob) {
+    window.alert("Upload a WAV reference clip first.");
+    return;
+  }
+
+  setSlotStatus(index, "Transcribing");
+
+  try {
+    const formData = new FormData();
+    formData.append("file", slot.blob, slot.fileName || `voice-${index + 1}.wav`);
+    formData.append("language", "en");
+
+    const response = await voiceboxFetch("/transcribe", {
+      method: "POST",
+      body: formData
+    });
+    const payload = await response.json();
+    await persistField(index, { referenceText: payload.text || "" });
+
+    const article = board.querySelector(`.voice-slot[data-slot="${index + 1}"]`);
+    const input = article?.querySelector(".reference-text");
+    if (input) input.value = payload.text || "";
+
+    setSlotStatus(index, "Transcript ready");
+  } catch (error) {
+    setSlotStatus(index, "Voicebox error");
+    window.alert(voiceboxHelp(error));
+  }
+}
+
 function renderSlot(slot) {
   const fragment = template.content.cloneNode(true);
   const article = fragment.querySelector(".voice-slot");
@@ -364,8 +559,11 @@ function renderSlot(slot) {
   const status = fragment.querySelector(".slot-status");
   const nameInput = fragment.querySelector(".voice-name");
   const textInput = fragment.querySelector(".voice-text");
+  const referenceText = fragment.querySelector(".reference-text");
   const fileInput = fragment.querySelector(".voice-file");
   const playButton = fragment.querySelector(".play-button");
+  const transcribeButton = fragment.querySelector(".transcribe-button");
+  const syncButton = fragment.querySelector(".sync-button");
   const audio = fragment.querySelector(".reference-audio");
   const meta = fragment.querySelector(".reference-meta");
 
@@ -373,7 +571,8 @@ function renderSlot(slot) {
   number.textContent = slot.index === 0 ? "Voice 1 · Narrator" : `Voice ${slot.index + 1} · Character`;
   nameInput.value = slot.name;
   textInput.value = slot.text;
-  status.textContent = slot.blob ? "Reference ready" : "Empty";
+  referenceText.value = slot.referenceText || "";
+  status.textContent = slot.voiceboxProfileId ? "Voicebox ready" : slot.blob ? "Reference ready" : "Empty";
 
   if (slot.blob) {
     audio.src = URL.createObjectURL(slot.blob);
@@ -391,6 +590,10 @@ function renderSlot(slot) {
     persistField(slot.index, { text: textInput.value });
   });
 
+  referenceText.addEventListener("input", () => {
+    persistField(slot.index, { referenceText: referenceText.value });
+  });
+
   fileInput.addEventListener("change", async () => {
     const file = fileInput.files[0];
     if (!file) return;
@@ -403,7 +606,9 @@ function renderSlot(slot) {
 
     await persistField(slot.index, {
       fileName: file.name,
-      blob: file
+      blob: file,
+      voiceboxProfileId: "",
+      voiceboxProfileName: ""
     });
 
     status.textContent = "Reference ready";
@@ -413,6 +618,8 @@ function renderSlot(slot) {
   });
 
   playButton.addEventListener("click", () => playSlot(slot.index));
+  transcribeButton.addEventListener("click", () => transcribeReference(slot.index));
+  syncButton.addEventListener("click", () => syncVoiceboxProfile(slot.index));
 
   return fragment;
 }
@@ -465,6 +672,7 @@ if ("speechSynthesis" in window) {
 }
 
 llmEndpoint.value = localStorage.getItem(STORY_ENDPOINT_KEY) || DEFAULT_STORY_ENDPOINT;
+voiceboxUrl.value = localStorage.getItem(VOICEBOX_URL_KEY) || DEFAULT_VOICEBOX_URL;
 
 openDb()
   .then((database) => {

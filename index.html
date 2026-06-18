@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>VoiceFun</title>
     <meta name="description" content="A 3 x 3 voice board for WAV reference clips and text playback.">
-    <link rel="stylesheet" href="styles.css?v=20260618-board">
+    <link rel="stylesheet" href="styles.css?v=20260618-voicebox">
   </head>
   <body>
     <header class="app-header">
@@ -35,6 +35,11 @@
           <label>
             LLM endpoint
             <input id="llmEndpoint" type="text" placeholder="/api/story">
+          </label>
+
+          <label>
+            Voicebox URL
+            <input id="voiceboxUrl" type="text" placeholder="http://127.0.0.1:17493">
           </label>
 
           <div class="story-actions">
@@ -73,8 +78,15 @@
           <textarea class="voice-text" rows="4" placeholder="Write text for this voice to play."></textarea>
         </label>
 
+        <label>
+          Reference transcript
+          <textarea class="reference-text" rows="3" placeholder="Exact words spoken in the WAV reference."></textarea>
+        </label>
+
         <div class="slot-actions">
           <button class="primary-button play-button" type="button">Play text</button>
+          <button class="secondary-button transcribe-button" type="button">Transcribe WAV</button>
+          <button class="secondary-button sync-button" type="button">Sync Voicebox</button>
           <label class="upload-button">
             Upload WAV
             <input class="voice-file" type="file" accept=".wav,audio/wav,audio/x-wav">
@@ -86,6 +98,6 @@
       </article>
     </template>
 
-    <script src="app.js?v=20260618-story"></script>
+    <script src="app.js?v=20260618-voicebox"></script>
   </body>
 </html>
