@@ -173,17 +173,32 @@ async function pollGeneration(id) {
   for (let attempt = 0; attempt < 1800; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     const response = await voiceboxFetch(`/generate/${id}/status`);
-    const payload = await response.json();
+    const payload = await readVoiceboxStatus(response);
 
     if (["completed", "failed", "cancelled"].includes(payload.status)) {
       if (payload.status !== "completed") {
-        throw new Error(`Voicebox generation ${payload.status}`);
+        throw new Error(payload.error || `Voicebox generation ${payload.status}`);
       }
       return payload;
     }
   }
 
   throw new Error("Voicebox generation timed out");
+}
+
+async function readVoiceboxStatus(response) {
+  const text = await response.text();
+  const dataLine = text
+    .trim()
+    .split(/\n+/)
+    .reverse()
+    .find((line) => line.startsWith("data:"));
+
+  if (dataLine) {
+    return JSON.parse(dataLine.replace(/^data:\s*/, ""));
+  }
+
+  return JSON.parse(text);
 }
 
 async function resolveVoiceboxProfileId(slot) {
