@@ -148,11 +148,15 @@ function setSlotStatus(index, message) {
 }
 
 function voiceboxHelp(error) {
-  return [
-    error.message,
-    "Make sure Voicebox is running on 127.0.0.1:17493.",
-    "For GitHub Pages, launch Voicebox with VOICEBOX_CORS_ORIGINS=https://patruff.github.io."
-  ].join(" ");
+  if (error instanceof TypeError || error.message === "Failed to fetch") {
+    return [
+      error.message,
+      "Make sure Voicebox is running on 127.0.0.1:17493.",
+      "For GitHub Pages, launch Voicebox with VOICEBOX_CORS_ORIGINS=https://patruff.github.io."
+    ].join(" ");
+  }
+
+  return error.message;
 }
 
 function stopSpeech() {
@@ -200,7 +204,7 @@ async function resolveVoiceboxProfileId(slot) {
 
   slot.voiceboxProfileId = profile.id;
   slot.voiceboxProfileName = profile.name || profileName;
-  await saveSlot(slot);
+  await saveVoice(slot);
   return profile.id;
 }
 
