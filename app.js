@@ -201,6 +201,12 @@ async function speakWithVoicebox(slot, text) {
   return generation;
 }
 
+function hasVoiceboxProfile(slot) {
+  const name = slot.name?.trim() || "";
+  const defaultName = `Voice ${slot.index + 1}`;
+  return Boolean(slot.voiceboxProfileId || slot.voiceboxProfileName || (name && name !== defaultName));
+}
+
 async function playSlot(index) {
   const slot = slots[index];
   const text = slot.text.trim();
@@ -210,7 +216,7 @@ async function playSlot(index) {
     return;
   }
 
-  if (slot.voiceboxProfileId || slot.voiceboxProfileName) {
+  if (hasVoiceboxProfile(slot)) {
     try {
       setSlotStatus(index, "Voicebox speaking");
       await speakWithVoicebox(slot, text);
@@ -425,7 +431,7 @@ async function speakTranscriptLine() {
   const speaker = speakerForLine(line);
   storyStatus.textContent = `Playing ${speaker.name}`;
 
-  if (slots[speaker.slotIndex]?.voiceboxProfileId || slots[speaker.slotIndex]?.voiceboxProfileName) {
+  if (hasVoiceboxProfile(slots[speaker.slotIndex])) {
     try {
       await speakWithVoicebox(slots[speaker.slotIndex], line.text);
     } catch (error) {
@@ -572,7 +578,7 @@ function renderSlot(slot) {
   nameInput.value = slot.name;
   textInput.value = slot.text;
   referenceText.value = slot.referenceText || "";
-  status.textContent = slot.voiceboxProfileId ? "Voicebox ready" : slot.blob ? "Reference ready" : "Empty";
+  status.textContent = hasVoiceboxProfile(slot) ? "Voicebox ready" : slot.blob ? "Reference ready" : "Empty";
 
   if (slot.blob) {
     audio.src = URL.createObjectURL(slot.blob);
