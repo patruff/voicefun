@@ -165,7 +165,7 @@ function stopSpeech() {
 async function pollGeneration(id) {
   if (!id) return;
 
-  for (let attempt = 0; attempt < 180; attempt += 1) {
+  for (let attempt = 0; attempt < 1800; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
     const response = await voiceboxFetch(`/generate/${id}/status`);
     const payload = await response.json();
