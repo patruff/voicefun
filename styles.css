@@ -1,15 +1,15 @@
 :root {
   color-scheme: light;
-  --bg: #f6f4ef;
+  --bg: #f4f0e8;
   --ink: #171717;
-  --muted: #6b665f;
+  --muted: #686056;
   --panel: #fffdf8;
-  --line: #d9d2c5;
+  --line: #d8cfbf;
   --accent: #006d77;
   --accent-strong: #004f56;
+  --blue: #2f5f98;
   --rose: #b23a48;
-  --gold: #e0a100;
-  --shadow: 0 18px 45px rgba(35, 31, 25, 0.12);
+  --shadow: 0 14px 36px rgba(35, 31, 25, 0.11);
 }
 
 * {
@@ -26,7 +26,6 @@ body {
 
 button,
 input,
-select,
 textarea {
   font: inherit;
 }
@@ -35,178 +34,146 @@ textarea {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  padding: 30px clamp(18px, 4vw, 52px) 18px;
+  gap: 20px;
+  padding: 28px clamp(16px, 4vw, 42px) 18px;
 }
 
 .eyebrow {
   margin: 0 0 5px;
   color: var(--accent);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 850;
   text-transform: uppercase;
 }
 
 h1,
-h2,
-h3,
 p {
   margin-top: 0;
 }
 
 h1 {
   margin-bottom: 0;
-  font-size: clamp(2.3rem, 5vw, 4.7rem);
+  font-size: clamp(2.4rem, 5vw, 4.5rem);
   line-height: 0.92;
 }
 
-h2 {
-  margin-bottom: 4px;
-  font-size: 1.2rem;
-}
-
-h3 {
-  margin-bottom: 2px;
-  font-size: 1rem;
-}
-
-.app-shell {
+.voice-board {
   display: grid;
-  grid-template-columns: minmax(280px, 0.95fr) minmax(320px, 1.25fr);
-  gap: 18px;
-  padding: 0 clamp(18px, 4vw, 52px) 44px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  padding: 0 clamp(16px, 4vw, 42px) 42px;
 }
 
-.panel {
+.voice-slot,
+.error-panel {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--panel);
   box-shadow: var(--shadow);
-  padding: clamp(18px, 3vw, 26px);
+  padding: 15px;
 }
 
-.composer {
-  grid-row: span 2;
-}
-
-.panel-heading {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 20px;
-}
-
-.panel-heading p,
-.voice-meta,
-.voice-notes,
-#recordStatus {
-  color: var(--muted);
-}
-
-.format-pill,
-.count-badge {
-  flex: 0 0 auto;
-  border: 1px solid rgba(0, 109, 119, 0.28);
-  border-radius: 999px;
-  color: var(--accent-strong);
-  background: rgba(0, 109, 119, 0.08);
-  padding: 7px 10px;
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
-.voice-form,
-.output-panel {
+.voice-slot {
   display: grid;
-  gap: 16px;
+  gap: 12px;
+}
+
+.slot-topline,
+.slot-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.slot-number {
+  color: var(--ink);
+  font-weight: 900;
+}
+
+.slot-status {
+  border: 1px solid rgba(0, 109, 119, 0.24);
+  border-radius: 999px;
+  background: rgba(0, 109, 119, 0.08);
+  color: var(--accent-strong);
+  padding: 5px 9px;
+  font-size: 0.75rem;
+  font-weight: 850;
 }
 
 label {
   display: grid;
-  gap: 8px;
+  gap: 7px;
   color: #332f29;
-  font-size: 0.88rem;
-  font-weight: 750;
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
 input,
-select,
 textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   color: var(--ink);
-  padding: 12px 13px;
+  padding: 10px 11px;
 }
 
 textarea {
+  min-height: 106px;
   resize: vertical;
 }
 
 input:focus,
-select:focus,
 textarea:focus,
-button:focus-visible {
+button:focus-visible,
+.upload-button:focus-within {
   outline: 3px solid rgba(0, 109, 119, 0.2);
   outline-offset: 2px;
 }
 
-.recorder {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 13px;
-  border: 1px dashed var(--line);
-  border-radius: 8px;
-}
-
-#recordStatus {
-  margin: 0;
-  font-size: 0.88rem;
-}
-
-.form-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-button {
-  min-height: 42px;
-  border: 0;
+button,
+.upload-button {
+  min-height: 40px;
   border-radius: 8px;
   cursor: pointer;
   font-weight: 850;
 }
 
-.primary-button,
-.secondary-button,
-.ghost-button {
-  padding: 0 16px;
+button {
+  border: 0;
 }
 
 .primary-button {
+  flex: 1 1 130px;
   background: var(--accent);
   color: #fff;
+  padding: 0 14px;
 }
 
 .primary-button:hover {
   background: var(--accent-strong);
 }
 
-.secondary-button {
-  border: 1px solid rgba(0, 109, 119, 0.35);
-  background: rgba(0, 109, 119, 0.1);
-  color: var(--accent-strong);
+.upload-button {
+  display: inline-grid;
+  position: relative;
+  flex: 1 1 120px;
+  place-items: center;
+  border: 1px solid rgba(47, 95, 152, 0.34);
+  background: rgba(47, 95, 152, 0.1);
+  color: var(--blue);
+  padding: 0 12px;
+  text-align: center;
 }
 
-.ghost-button {
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--ink);
+.upload-button input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .icon-button {
@@ -217,54 +184,18 @@ button {
   border: 1px solid var(--line);
   background: var(--panel);
   color: var(--ink);
-  font-size: 1.3rem;
+  font-size: 1.25rem;
 }
 
-.voice-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
-}
-
-.voice-card {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 14px;
-  background: #fff;
-}
-
-.voice-card-header {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.voice-meta,
-.voice-notes {
-  margin-bottom: 0;
-  overflow-wrap: anywhere;
-}
-
-audio {
+.reference-audio {
   width: 100%;
 }
 
-.delete-button {
-  color: var(--rose);
-}
-
-pre {
-  min-height: 130px;
-  overflow: auto;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #191713;
-  color: #fff8e8;
-  padding: 14px;
-  white-space: pre-wrap;
+.reference-meta {
+  margin-bottom: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  overflow-wrap: anywhere;
 }
 
 .sr-only {
@@ -276,27 +207,18 @@ pre {
   white-space: nowrap;
 }
 
-@media (max-width: 880px) {
-  .app-shell {
-    grid-template-columns: 1fr;
-  }
-
-  .composer {
-    grid-row: auto;
+@media (max-width: 1050px) {
+  .voice-board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 560px) {
+@media (max-width: 680px) {
   .app-header {
     align-items: flex-start;
   }
 
-  .panel-heading,
-  .recorder {
-    display: grid;
-  }
-
-  .voice-list {
+  .voice-board {
     grid-template-columns: 1fr;
   }
 }

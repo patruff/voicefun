@@ -1,20 +1,21 @@
 # VoiceFun
 
-VoiceFun is a no-build GitHub Pages app for collecting and organizing voice reference recordings for voice cloning experiments.
+VoiceFun is a no-build GitHub Pages app for collecting and organizing up to 9 voice reference recordings for voice cloning experiments.
 
-It defaults to `.wav` because Smart Recorder on Android exports WAV files. The app stores voice references in the browser with IndexedDB, lets you keep notes per voice, previews audio, and drafts clone-job JSON for a future backend or voice API.
+It defaults to `.wav` because Smart Recorder on Android exports WAV files. The app stores each reference clip in the browser with IndexedDB and ties it to a fixed 3 x 3 voice slot with a name and playback text.
 
 ## What works on GitHub Pages
 
-- Add multiple named voice profiles.
-- Upload phone-recorded `.wav` reference files.
-- Record from the browser when microphone permission is available.
-- Preview saved references locally.
-- Export a voice-library manifest.
-- Copy a clone-job JSON payload.
+- Use a 3 x 3 grid with 9 total voice slots.
+- Name each voice.
+- Write text directly above each voice's play button.
+- Upload one phone-recorded `.wav` reference clip per slot.
+- Preview saved reference clips locally.
+- Play the text in a slot with browser text-to-speech.
+- Export a voice-board manifest.
 
 ## Important limitation
 
-GitHub Pages is static hosting. It cannot run a voice-cloning model by itself, store files on a server, or call private APIs safely. Use this as the front end and add a backend/API later for actual synthesis.
+GitHub Pages is static hosting. It cannot run a voice-cloning model by itself, store files on a server, or call private APIs safely. The current play button uses the browser speech engine; the uploaded WAV is stored and tied to the slot so a future backend/API can replace that playback with real cloned-voice synthesis.
 
 Only clone voices you own or have explicit permission to use.

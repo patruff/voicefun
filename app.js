@@ -1,38 +1,23 @@
 const DB_NAME = "voicefun";
 const DB_VERSION = 1;
 const STORE = "voices";
+const SLOT_COUNT = 9;
 
-const form = document.querySelector("#voiceForm");
-const voiceName = document.querySelector("#voiceName");
-const voicePrompt = document.querySelector("#voicePrompt");
-const voiceFile = document.querySelector("#voiceFile");
-const recordButton = document.querySelector("#recordButton");
-const recordStatus = document.querySelector("#recordStatus");
-const clearForm = document.querySelector("#clearForm");
-const voiceList = document.querySelector("#voiceList");
-const voiceCount = document.querySelector("#voiceCount");
-const cloneVoice = document.querySelector("#cloneVoice");
-const cloneText = document.querySelector("#cloneText");
-const copyJob = document.querySelector("#copyJob");
-const jobPreview = document.querySelector("#jobPreview");
+const board = document.querySelector("#voiceBoard");
+const template = document.querySelector("#voiceSlotTemplate");
 const exportJson = document.querySelector("#exportJson");
-const template = document.querySelector("#voiceCardTemplate");
 
 let db;
-let audioContext;
-let audioSource;
-let audioProcessor;
-let recordingStream;
-let recordingBuffers = [];
-let recordingLength = 0;
-let isRecording = false;
+let slots = [];
 
 function openDb() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
 
     request.onupgradeneeded = () => {
-      request.result.createObjectStore(STORE, { keyPath: "id" });
+      if (!request.result.objectStoreNames.contains(STORE)) {
+        request.result.createObjectStore(STORE, { keyPath: "id" });
+      }
     };
 
     request.onsuccess = () => resolve(request.result);
@@ -40,254 +25,212 @@ function openDb() {
   });
 }
 
-function transaction(mode = "readonly") {
+function store(mode = "readonly") {
   return db.transaction(STORE, mode).objectStore(STORE);
+}
+
+function getVoice(id) {
+  return new Promise((resolve, reject) => {
+    const request = store().get(id);
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+function saveVoice(slot) {
+  return new Promise((resolve, reject) => {
+    const request = store("readwrite").put(slot);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error);
+  });
 }
 
 function getAllVoices() {
   return new Promise((resolve, reject) => {
-    const request = transaction().getAll();
-    request.onsuccess = () => resolve(request.result.sort((a, b) => b.createdAt - a.createdAt));
-    request.onerror = () => reject(request.error);
-  });
-}
-
-function saveVoice(voice) {
-  return new Promise((resolve, reject) => {
-    const request = transaction("readwrite").put(voice);
-    request.onsuccess = () => resolve();
-    request.onerror = () => reject(request.error);
-  });
-}
-
-function deleteVoice(id) {
-  return new Promise((resolve, reject) => {
-    const request = transaction("readwrite").delete(id);
-    request.onsuccess = () => resolve();
+    const request = store().getAll();
+    request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
 }
 
 function bytesToSize(bytes) {
+  if (!bytes) return "0 B";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
-function sanitizeFilename(name) {
-  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "") || "voice";
+function slotId(index) {
+  return `slot-${index}`;
 }
 
-function renderJob() {
-  const selected = cloneVoice.value;
-  const payload = {
-    voiceId: selected || null,
-    inputFormat: "wav",
-    text: cloneText.value.trim(),
-    consent: "Use only voices you own or have explicit permission to clone."
+function defaultSlot(index) {
+  return {
+    id: slotId(index),
+    index,
+    name: "",
+    text: "",
+    fileName: "",
+    blob: null,
+    updatedAt: Date.now()
   };
-
-  jobPreview.textContent = JSON.stringify(payload, null, 2);
 }
 
-async function renderVoices() {
-  const voices = await getAllVoices();
-  voiceList.textContent = "";
-  cloneVoice.textContent = "";
-  voiceCount.textContent = String(voices.length);
+function isWav(file) {
+  return file.name.toLowerCase().endsWith(".wav") || file.type === "audio/wav" || file.type === "audio/x-wav";
+}
 
-  if (!voices.length) {
-    const empty = document.createElement("p");
-    empty.className = "voice-notes";
-    empty.textContent = "No voices yet. Add a `.wav` reference to start building your library.";
-    voiceList.append(empty);
+function getSpeechVoice(index) {
+  const voices = window.speechSynthesis.getVoices();
+  return voices[index % voices.length] || null;
+}
 
-    const option = new Option("No saved voices", "");
-    cloneVoice.append(option);
-    renderJob();
+async function persistField(index, updates) {
+  slots[index] = {
+    ...slots[index],
+    ...updates,
+    updatedAt: Date.now()
+  };
+  await saveVoice(slots[index]);
+}
+
+function stopSpeech() {
+  if ("speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+  }
+}
+
+function playSlot(index) {
+  const slot = slots[index];
+  const text = slot.text.trim();
+
+  if (!("speechSynthesis" in window)) {
+    window.alert("This browser does not support text playback.");
     return;
   }
 
-  for (const voice of voices) {
-    const card = template.content.cloneNode(true);
-    const audioUrl = URL.createObjectURL(voice.blob);
-    card.querySelector("h3").textContent = voice.name;
-    card.querySelector(".voice-meta").textContent = `${voice.fileName} · ${bytesToSize(voice.blob.size)}`;
-    card.querySelector(".voice-notes").textContent = voice.prompt || "No prompt notes yet.";
-    card.querySelector("audio").src = audioUrl;
-    card.querySelector(".delete-button").addEventListener("click", async () => {
-      URL.revokeObjectURL(audioUrl);
-      await deleteVoice(voice.id);
-      await renderVoices();
-    });
-    voiceList.append(card);
-
-    cloneVoice.append(new Option(voice.name, voice.id));
-  }
-
-  renderJob();
-}
-
-function blobToWavFile(blob, fallbackName) {
-  const fileName = `${sanitizeFilename(fallbackName)}.wav`;
-  return new File([blob], fileName, { type: "audio/wav" });
-}
-
-function encodeWav(buffers, sampleRate) {
-  const samples = new Float32Array(recordingLength);
-  let offset = 0;
-
-  for (const buffer of buffers) {
-    samples.set(buffer, offset);
-    offset += buffer.length;
-  }
-
-  const dataSize = samples.length * 2;
-  const arrayBuffer = new ArrayBuffer(44 + dataSize);
-  const view = new DataView(arrayBuffer);
-
-  function writeString(position, value) {
-    for (let i = 0; i < value.length; i += 1) {
-      view.setUint8(position + i, value.charCodeAt(i));
-    }
-  }
-
-  writeString(0, "RIFF");
-  view.setUint32(4, 36 + dataSize, true);
-  writeString(8, "WAVE");
-  writeString(12, "fmt ");
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  writeString(36, "data");
-  view.setUint32(40, dataSize, true);
-
-  let index = 44;
-  for (const sample of samples) {
-    const clamped = Math.max(-1, Math.min(1, sample));
-    view.setInt16(index, clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff, true);
-    index += 2;
-  }
-
-  return new Blob([view], { type: "audio/wav" });
-}
-
-async function startRecording() {
-  recordingStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  audioContext = new AudioContext();
-  audioSource = audioContext.createMediaStreamSource(recordingStream);
-  audioProcessor = audioContext.createScriptProcessor(4096, 1, 1);
-  recordingBuffers = [];
-  recordingLength = 0;
-
-  audioProcessor.onaudioprocess = (event) => {
-    if (!isRecording) return;
-    const channel = event.inputBuffer.getChannelData(0);
-    recordingBuffers.push(new Float32Array(channel));
-    recordingLength += channel.length;
-  };
-
-  audioSource.connect(audioProcessor);
-  audioProcessor.connect(audioContext.destination);
-  isRecording = true;
-  recordButton.textContent = "Stop";
-  recordStatus.textContent = "Recording...";
-}
-
-async function stopRecording() {
-  isRecording = false;
-  audioProcessor?.disconnect();
-  audioSource?.disconnect();
-  recordingStream?.getTracks().forEach((track) => track.stop());
-
-  const wavBlob = encodeWav(recordingBuffers, audioContext.sampleRate);
-  await audioContext.close();
-  const file = blobToWavFile(wavBlob, voiceName.value || "browser-recording");
-  const transfer = new DataTransfer();
-  transfer.items.add(file);
-  voiceFile.files = transfer.files;
-  recordStatus.textContent = "Recording captured as WAV.";
-  recordButton.textContent = "Record WAV";
-}
-
-recordButton.addEventListener("click", async () => {
-  try {
-    if (isRecording) {
-      await stopRecording();
-      return;
-    }
-    await startRecording();
-  } catch (error) {
-    recordStatus.textContent = `Microphone unavailable: ${error.message}`;
-  }
-});
-
-form.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const file = voiceFile.files[0];
-
-  if (!file) return;
-  if (!file.name.toLowerCase().endsWith(".wav") && file.type !== "audio/wav") {
-    recordStatus.textContent = "Please use a `.wav` reference recording.";
+  if (!text) {
+    window.alert("Write some text in this voice slot first.");
     return;
   }
 
-  await saveVoice({
-    id: crypto.randomUUID(),
-    name: voiceName.value.trim(),
-    prompt: voicePrompt.value.trim(),
-    fileName: file.name,
-    blob: file,
-    createdAt: Date.now()
+  stopSpeech();
+  const utterance = new SpeechSynthesisUtterance(text);
+  const voice = getSpeechVoice(index);
+  if (voice) utterance.voice = voice;
+  utterance.rate = 1;
+  utterance.pitch = 1;
+  window.speechSynthesis.speak(utterance);
+}
+
+function renderSlot(slot) {
+  const fragment = template.content.cloneNode(true);
+  const article = fragment.querySelector(".voice-slot");
+  const number = fragment.querySelector(".slot-number");
+  const status = fragment.querySelector(".slot-status");
+  const nameInput = fragment.querySelector(".voice-name");
+  const textInput = fragment.querySelector(".voice-text");
+  const fileInput = fragment.querySelector(".voice-file");
+  const playButton = fragment.querySelector(".play-button");
+  const audio = fragment.querySelector(".reference-audio");
+  const meta = fragment.querySelector(".reference-meta");
+
+  article.dataset.slot = String(slot.index + 1);
+  number.textContent = `Voice ${slot.index + 1}`;
+  nameInput.value = slot.name;
+  textInput.value = slot.text;
+  status.textContent = slot.blob ? "Reference ready" : "Empty";
+
+  if (slot.blob) {
+    audio.src = URL.createObjectURL(slot.blob);
+    audio.hidden = false;
+    meta.textContent = `${slot.fileName} · ${bytesToSize(slot.blob.size)}`;
+  } else {
+    audio.hidden = true;
+  }
+
+  nameInput.addEventListener("change", () => {
+    persistField(slot.index, { name: nameInput.value.trim() });
   });
 
-  form.reset();
-  recordStatus.textContent = "Voice saved locally.";
-  await renderVoices();
-});
+  textInput.addEventListener("input", () => {
+    persistField(slot.index, { text: textInput.value });
+  });
 
-clearForm.addEventListener("click", () => {
-  form.reset();
-  recordStatus.textContent = "Ready for a phone `.wav` upload or browser recording.";
-});
+  fileInput.addEventListener("change", async () => {
+    const file = fileInput.files[0];
+    if (!file) return;
 
-cloneVoice.addEventListener("change", renderJob);
-cloneText.addEventListener("input", renderJob);
+    if (!isWav(file)) {
+      meta.textContent = "Use a `.wav` reference clip for this slot.";
+      fileInput.value = "";
+      return;
+    }
 
-copyJob.addEventListener("click", async () => {
-  await navigator.clipboard.writeText(jobPreview.textContent);
-  copyJob.textContent = "Copied";
-  setTimeout(() => {
-    copyJob.textContent = "Copy job JSON";
-  }, 1200);
-});
+    await persistField(slot.index, {
+      fileName: file.name,
+      blob: file
+    });
+
+    status.textContent = "Reference ready";
+    audio.src = URL.createObjectURL(file);
+    audio.hidden = false;
+    meta.textContent = `${file.name} · ${bytesToSize(file.size)}`;
+  });
+
+  playButton.addEventListener("click", () => playSlot(slot.index));
+
+  return fragment;
+}
+
+async function renderBoard() {
+  board.textContent = "";
+  slots = [];
+
+  for (let index = 0; index < SLOT_COUNT; index += 1) {
+    const saved = await getVoice(slotId(index));
+    const slot = {
+      ...defaultSlot(index),
+      ...saved,
+      id: slotId(index),
+      index
+    };
+    slots.push(slot);
+    board.append(renderSlot(slot));
+  }
+}
 
 exportJson.addEventListener("click", async () => {
   const voices = await getAllVoices();
-  const manifest = voices.map(({ blob, ...voice }) => ({
-    ...voice,
-    size: blob.size,
-    type: blob.type || "audio/wav"
-  }));
-  const blob = new Blob([JSON.stringify({ app: "VoiceFun", voices: manifest }, null, 2)], {
+  const manifest = voices
+    .filter((voice) => voice.id.startsWith("slot-"))
+    .sort((a, b) => a.index - b.index)
+    .map(({ blob, ...voice }) => ({
+      ...voice,
+      hasReference: Boolean(blob),
+      referenceSize: blob?.size || 0,
+      referenceType: blob?.type || "audio/wav"
+    }));
+
+  const blob = new Blob([JSON.stringify({ app: "VoiceFun", maxVoices: SLOT_COUNT, voices: manifest }, null, 2)], {
     type: "application/json"
   });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(blob);
-  link.download = "voicefun-library.json";
+  link.download = "voicefun-board.json";
   link.click();
   URL.revokeObjectURL(link.href);
 });
 
+if ("speechSynthesis" in window) {
+  window.speechSynthesis.addEventListener?.("voiceschanged", () => {});
+}
+
 openDb()
   .then((database) => {
     db = database;
-    return renderVoices();
+    return renderBoard();
   })
   .catch((error) => {
-    document.body.innerHTML = `<main class="panel"><h1>VoiceFun</h1><p>Could not open local storage: ${error.message}</p></main>`;
+    document.body.innerHTML = `<main class="error-panel"><h1>VoiceFun</h1><p>Could not open local storage: ${error.message}</p></main>`;
   });

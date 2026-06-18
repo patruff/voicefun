@@ -4,108 +4,50 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>VoiceFun</title>
-    <meta name="description" content="A local-first voice reference manager for voice cloning experiments.">
+    <meta name="description" content="A 3 x 3 voice board for WAV reference clips and text playback.">
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
     <header class="app-header">
       <div>
-        <p class="eyebrow">Voice reference lab</p>
+        <p class="eyebrow">9 voice slots</p>
         <h1>VoiceFun</h1>
       </div>
-      <button class="icon-button" id="exportJson" type="button" title="Export voice library">
+      <button class="icon-button" id="exportJson" type="button" title="Export voice board">
         <span aria-hidden="true">↓</span>
-        <span class="sr-only">Export voice library</span>
+        <span class="sr-only">Export voice board</span>
       </button>
     </header>
 
-    <main class="app-shell">
-      <section class="panel composer" aria-labelledby="add-voice-title">
-        <div class="panel-heading">
-          <div>
-            <h2 id="add-voice-title">Add a voice</h2>
-            <p>Upload a Smart Recorder `.wav` from your phone, or record one here.</p>
-          </div>
-          <span class="format-pill">Default: WAV</span>
-        </div>
+    <main class="voice-board" id="voiceBoard" aria-live="polite"></main>
 
-        <form id="voiceForm" class="voice-form">
-          <label>
-            Voice name
-            <input id="voiceName" name="voiceName" type="text" placeholder="Anita narration" autocomplete="off" required>
-          </label>
-
-          <label>
-            Reference prompt
-            <textarea id="voicePrompt" name="voicePrompt" rows="3" placeholder="Warm, clear, conversational voice."></textarea>
-          </label>
-
-          <label>
-            Reference recording
-            <input id="voiceFile" name="voiceFile" type="file" accept=".wav,audio/wav,audio/x-wav" required>
-          </label>
-
-          <div class="recorder">
-            <button id="recordButton" class="secondary-button" type="button">Record WAV</button>
-            <p id="recordStatus">Ready for a phone `.wav` upload or browser recording.</p>
-          </div>
-
-          <div class="form-actions">
-            <button class="primary-button" type="submit">Save voice</button>
-            <button class="ghost-button" id="clearForm" type="button">Clear</button>
-          </div>
-        </form>
-      </section>
-
-      <section class="panel" aria-labelledby="library-title">
-        <div class="panel-heading">
-          <div>
-            <h2 id="library-title">Voice library</h2>
-            <p>Stored in this browser with IndexedDB. Nothing uploads anywhere.</p>
-          </div>
-          <span id="voiceCount" class="count-badge">0</span>
-        </div>
-
-        <div id="voiceList" class="voice-list" aria-live="polite"></div>
-      </section>
-
-      <section class="panel output-panel" aria-labelledby="clone-title">
-        <div class="panel-heading">
-          <div>
-            <h2 id="clone-title">Clone job draft</h2>
-            <p>Pick a voice and draft text for a future cloning backend/API.</p>
-          </div>
+    <template id="voiceSlotTemplate">
+      <article class="voice-slot">
+        <div class="slot-topline">
+          <span class="slot-number"></span>
+          <span class="slot-status">Empty</span>
         </div>
 
         <label>
-          Voice
-          <select id="cloneVoice"></select>
+          Name
+          <input class="voice-name" type="text" placeholder="Voice name" autocomplete="off">
         </label>
 
         <label>
-          Text to speak
-          <textarea id="cloneText" rows="5" placeholder="Type the line you want the selected voice to say."></textarea>
+          Text
+          <textarea class="voice-text" rows="4" placeholder="Write text for this voice to play."></textarea>
         </label>
 
-        <button class="primary-button" id="copyJob" type="button">Copy job JSON</button>
-        <pre id="jobPreview" aria-live="polite">{}</pre>
-      </section>
-    </main>
-
-    <template id="voiceCardTemplate">
-      <article class="voice-card">
-        <div class="voice-card-header">
-          <div>
-            <h3></h3>
-            <p class="voice-meta"></p>
-          </div>
-          <button class="icon-button delete-button" type="button" title="Delete voice">
-            <span aria-hidden="true">×</span>
-            <span class="sr-only">Delete voice</span>
-          </button>
+        <div class="slot-actions">
+          <button class="primary-button play-button" type="button">Play text</button>
+          <label class="upload-button">
+            Upload WAV
+            <input class="voice-file" type="file" accept=".wav,audio/wav,audio/x-wav">
+          </label>
         </div>
-        <p class="voice-notes"></p>
-        <audio controls preload="metadata"></audio>
+
+        <audio class="reference-audio" controls preload="metadata"></audio>
+        <p class="reference-meta">No reference clip yet.</p>
       </article>
     </template>
 
