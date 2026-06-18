@@ -4,6 +4,7 @@ const STORE = "voices";
 const SLOT_COUNT = 9;
 const DEFAULT_STORY_ENDPOINT = "/api/story";
 const DEFAULT_VOICEBOX_URL = "http://127.0.0.1:17493";
+const DEFAULT_VOICEBOX_MODEL_SIZE = "0.6B";
 const STORY_ENDPOINT_KEY = "voicefun-story-endpoint";
 const VOICEBOX_URL_KEY = "voicefun-voicebox-url";
 
@@ -181,19 +182,40 @@ async function pollGeneration(id) {
   throw new Error("Voicebox generation timed out");
 }
 
-async function speakWithVoicebox(slot, text) {
-  const profile = slot.voiceboxProfileId || slot.voiceboxProfileName || slot.name;
-  if (!profile) {
+async function resolveVoiceboxProfileId(slot) {
+  if (slot.voiceboxProfileId) return slot.voiceboxProfileId;
+
+  const profileName = slot.voiceboxProfileName || slot.name?.trim();
+  if (!profileName) {
     throw new Error("No Voicebox profile is linked for this slot.");
   }
 
-  const response = await voiceboxFetch("/speak", {
+  const response = await voiceboxFetch("/profiles");
+  const profiles = await response.json();
+  const profile = profiles.find((item) => item.name?.toLowerCase() === profileName.toLowerCase());
+
+  if (!profile?.id) {
+    throw new Error(`Voicebox profile '${profileName}' was not found.`);
+  }
+
+  slot.voiceboxProfileId = profile.id;
+  slot.voiceboxProfileName = profile.name || profileName;
+  await saveSlot(slot);
+  return profile.id;
+}
+
+async function speakWithVoicebox(slot, text) {
+  const profileId = await resolveVoiceboxProfileId(slot);
+
+  const response = await voiceboxFetch("/generate", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       text,
-      profile,
-      language: "en"
+      profile_id: profileId,
+      language: "en",
+      engine: "qwen",
+      model_size: DEFAULT_VOICEBOX_MODEL_SIZE
     })
   });
   const generation = await response.json();
