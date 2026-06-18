@@ -19,7 +19,42 @@
       </button>
     </header>
 
-    <main class="voice-board" id="voiceBoard" aria-live="polite"></main>
+    <main>
+      <section class="story-panel" aria-labelledby="story-title">
+        <div class="story-controls">
+          <div>
+            <p class="eyebrow">Story builder</p>
+            <h2 id="story-title">Tell a story</h2>
+          </div>
+
+          <label>
+            Must use phrases
+            <textarea id="mustUsePhrases" rows="3" placeholder="one phrase per line"></textarea>
+          </label>
+
+          <label>
+            LLM endpoint
+            <input id="llmEndpoint" type="url" placeholder="https://your-story-api.example/generate">
+          </label>
+
+          <div class="story-actions">
+            <button class="primary-button" id="tellStory" type="button">Tell a story</button>
+            <button class="secondary-button" id="playStory" type="button">Play story</button>
+            <button class="ghost-button" id="stopStory" type="button">Stop</button>
+          </div>
+        </div>
+
+        <div class="transcript-wrap">
+          <div class="transcript-heading">
+            <h2>Transcript</h2>
+            <span id="storyStatus">Ready</span>
+          </div>
+          <ol id="storyTranscript" class="story-transcript"></ol>
+        </div>
+      </section>
+
+      <section class="voice-board" id="voiceBoard" aria-live="polite"></section>
+    </main>
 
     <template id="voiceSlotTemplate">
       <article class="voice-slot">
@@ -51,6 +86,6 @@
       </article>
     </template>
 
-    <script src="app.js?v=20260618-board"></script>
+    <script src="app.js?v=20260618-story"></script>
   </body>
 </html>

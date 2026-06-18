@@ -47,6 +47,7 @@ textarea {
 }
 
 h1,
+h2,
 p {
   margin-top: 0;
 }
@@ -55,6 +56,95 @@ h1 {
   margin-bottom: 0;
   font-size: clamp(2.4rem, 5vw, 4.5rem);
   line-height: 0.92;
+}
+
+h2 {
+  margin-bottom: 0;
+  font-size: 1.1rem;
+}
+
+main {
+  display: grid;
+  gap: 14px;
+}
+
+.story-panel {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(320px, 1.1fr);
+  gap: 14px;
+  padding: 0 clamp(16px, 4vw, 42px);
+}
+
+.story-controls,
+.transcript-wrap,
+.voice-board {
+  min-width: 0;
+}
+
+.story-controls,
+.transcript-wrap {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  padding: 15px;
+}
+
+.story-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.story-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.transcript-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+#storyStatus {
+  border: 1px solid rgba(0, 109, 119, 0.24);
+  border-radius: 999px;
+  background: rgba(0, 109, 119, 0.08);
+  color: var(--accent-strong);
+  padding: 5px 9px;
+  font-size: 0.75rem;
+  font-weight: 850;
+}
+
+.story-transcript {
+  display: grid;
+  gap: 8px;
+  max-height: 330px;
+  margin: 0;
+  overflow: auto;
+  padding: 0;
+  list-style: none;
+}
+
+.story-transcript li {
+  display: grid;
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  padding: 10px;
+}
+
+.story-transcript strong {
+  color: var(--accent-strong);
+  font-size: 0.82rem;
+}
+
+.story-transcript span {
+  overflow-wrap: anywhere;
 }
 
 .voice-board {
@@ -152,8 +242,31 @@ button {
   padding: 0 14px;
 }
 
+.primary-button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
 .primary-button:hover {
   background: var(--accent-strong);
+}
+
+.secondary-button,
+.ghost-button {
+  flex: 1 1 120px;
+  padding: 0 14px;
+}
+
+.secondary-button {
+  border: 1px solid rgba(47, 95, 152, 0.34);
+  background: rgba(47, 95, 152, 0.1);
+  color: var(--blue);
+}
+
+.ghost-button {
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
 }
 
 .upload-button {
@@ -208,8 +321,9 @@ button {
 }
 
 @media (max-width: 1050px) {
+  .story-panel,
   .voice-board {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 }
 

@@ -2,13 +2,23 @@ const DB_NAME = "voicefun";
 const DB_VERSION = 1;
 const STORE = "voices";
 const SLOT_COUNT = 9;
+const STORY_ENDPOINT_KEY = "voicefun-story-endpoint";
 
 const board = document.querySelector("#voiceBoard");
 const template = document.querySelector("#voiceSlotTemplate");
 const exportJson = document.querySelector("#exportJson");
+const mustUsePhrases = document.querySelector("#mustUsePhrases");
+const llmEndpoint = document.querySelector("#llmEndpoint");
+const tellStory = document.querySelector("#tellStory");
+const playStory = document.querySelector("#playStory");
+const stopStory = document.querySelector("#stopStory");
+const storyStatus = document.querySelector("#storyStatus");
+const storyTranscript = document.querySelector("#storyTranscript");
 
 let db;
 let slots = [];
+let transcript = [];
+let currentStoryIndex = 0;
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -85,6 +95,12 @@ function getSpeechVoice(index) {
   return voices[index % voices.length] || null;
 }
 
+function displayName(slot) {
+  if (slot?.name) return slot.name;
+  if (slot?.index === 0) return "Narrator";
+  return `Character ${slot.index}`;
+}
+
 async function persistField(index, updates) {
   slots[index] = {
     ...slots[index],
@@ -98,6 +114,8 @@ function stopSpeech() {
   if ("speechSynthesis" in window) {
     window.speechSynthesis.cancel();
   }
+  currentStoryIndex = 0;
+  storyStatus.textContent = "Stopped";
 }
 
 function playSlot(index) {
@@ -123,6 +141,221 @@ function playSlot(index) {
   window.speechSynthesis.speak(utterance);
 }
 
+function getPhrases() {
+  return mustUsePhrases.value
+    .split(/\n|,/)
+    .map((phrase) => phrase.trim())
+    .filter(Boolean);
+}
+
+function speakerForLine(line) {
+  const slotIndex = Math.max(0, Math.min(SLOT_COUNT - 1, Number(line.slot) - 1 || 0));
+  return {
+    slotIndex,
+    slotNumber: slotIndex + 1,
+    name: displayName(slots[slotIndex])
+  };
+}
+
+function renderTranscript(lines) {
+  storyTranscript.textContent = "";
+
+  for (const line of lines) {
+    const speaker = speakerForLine(line);
+    const item = document.createElement("li");
+    const speakerName = document.createElement("strong");
+    const text = document.createElement("span");
+    item.dataset.slot = String(speaker.slotNumber);
+    speakerName.textContent = speaker.name;
+    text.textContent = line.text;
+    item.append(speakerName, text);
+    storyTranscript.append(item);
+  }
+}
+
+function normalizeLine(line, fallbackIndex) {
+  const slot = Number(line.slot || line.voice || line.voiceSlot || line.speakerSlot);
+  const text = String(line.text || line.line || line.dialogue || "").trim();
+
+  return {
+    slot: Number.isInteger(slot) && slot >= 1 && slot <= SLOT_COUNT ? slot : (fallbackIndex % SLOT_COUNT) + 1,
+    text
+  };
+}
+
+function normalizeTranscript(value) {
+  const rawLines = Array.isArray(value) ? value : value?.transcript || value?.lines || [];
+  return rawLines
+    .map(normalizeLine)
+    .filter((line) => line.text)
+    .map((line) => ({
+      slot: line.slot === 1 ? 1 : Math.max(2, Math.min(SLOT_COUNT, line.slot)),
+      text: line.text
+    }));
+}
+
+function missingPhrases(lines, phrases) {
+  const characterText = lines
+    .filter((line) => Number(line.slot) > 1)
+    .map((line) => line.text.toLowerCase())
+    .join("\n");
+
+  return phrases.filter((phrase) => !characterText.includes(phrase.toLowerCase()));
+}
+
+function buildStoryPrompt(phrases) {
+  const voices = slots.map((slot) => ({
+    slot: slot.index + 1,
+    role: slot.index === 0 ? "narrator" : "character",
+    name: displayName(slot),
+    hasReference: Boolean(slot.blob)
+  }));
+
+  return [
+    "Write a short, lively audio drama transcript as JSON only.",
+    "Use voice slot 1 only for narrator lines.",
+    "Use voice slots 2-9 for character dialogue.",
+    "Every phrase must appear exactly as written in at least one character line, not in narrator-only text.",
+    "Return this schema: {\"transcript\":[{\"slot\":1,\"text\":\"...\"},{\"slot\":2,\"text\":\"...\"}]}",
+    `Voices: ${JSON.stringify(voices)}`,
+    `Must use phrases: ${JSON.stringify(phrases)}`
+  ].join("\n");
+}
+
+async function callStoryEndpoint(phrases) {
+  const endpoint = llmEndpoint.value.trim();
+  if (!endpoint) return null;
+
+  localStorage.setItem(STORY_ENDPOINT_KEY, endpoint);
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      prompt: buildStoryPrompt(phrases),
+      voices: slots.map((slot) => ({
+        slot: slot.index + 1,
+        name: displayName(slot),
+        role: slot.index === 0 ? "narrator" : "character",
+        hasReference: Boolean(slot.blob),
+        fileName: slot.fileName
+      })),
+      phrases
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`LLM endpoint returned ${response.status}`);
+  }
+
+  const contentType = response.headers.get("content-type") || "";
+  const payload = contentType.includes("application/json") ? await response.json() : JSON.parse(await response.text());
+  const lines = normalizeTranscript(payload);
+  const missing = missingPhrases(lines, phrases);
+
+  if (missing.length) {
+    throw new Error(`Story missed: ${missing.join(", ")}`);
+  }
+
+  return lines;
+}
+
+function localStory(phrases) {
+  const characterSlots = Array.from({ length: SLOT_COUNT - 1 }, (_, index) => index + 2);
+  const titleSeed = phrases[0] || "the hidden song";
+  const lines = [
+    {
+      slot: 1,
+      text: `Tonight, ${displayName(slots[0])} opened the curtain on a story about ${titleSeed}.`
+    },
+    {
+      slot: 2,
+      text: `${displayName(slots[1])} stepped forward and promised that everyone would get a turn.`
+    }
+  ];
+
+  phrases.forEach((phrase, index) => {
+    const slot = characterSlots[index % characterSlots.length];
+    const speaker = displayName(slots[slot - 1]);
+    lines.push({
+      slot,
+      text: `${speaker} said, "${phrase}," and the room changed direction.`
+    });
+    lines.push({
+      slot: 1,
+      text: `The narrator watched voice ${slot} carry that phrase into the next scene.`
+    });
+  });
+
+  lines.push({
+    slot: characterSlots[(phrases.length + 1) % characterSlots.length],
+    text: "By the end, every voice had found a place in the same strange little adventure."
+  });
+  lines.push({
+    slot: 1,
+    text: "And that is where the story stopped, waiting for the next recording."
+  });
+
+  return lines;
+}
+
+async function makeStory() {
+  const phrases = getPhrases();
+  tellStory.disabled = true;
+  stopSpeech();
+  storyStatus.textContent = "Writing...";
+
+  try {
+    const llmLines = await callStoryEndpoint(phrases);
+    transcript = llmLines || localStory(phrases);
+    renderTranscript(transcript);
+    storyStatus.textContent = llmLines ? "Transcript from LLM" : "Transcript ready";
+  } catch (error) {
+    transcript = localStory(phrases);
+    renderTranscript(transcript);
+    storyStatus.textContent = `Local transcript used: ${error.message}`;
+  } finally {
+    tellStory.disabled = false;
+  }
+}
+
+function speakTranscriptLine() {
+  if (!transcript.length || currentStoryIndex >= transcript.length) {
+    currentStoryIndex = 0;
+    storyStatus.textContent = "Finished";
+    return;
+  }
+
+  const line = transcript[currentStoryIndex];
+  const speaker = speakerForLine(line);
+  const utterance = new SpeechSynthesisUtterance(line.text);
+  const voice = getSpeechVoice(speaker.slotIndex);
+  if (voice) utterance.voice = voice;
+  utterance.rate = 1;
+  utterance.pitch = 1;
+  storyStatus.textContent = `Playing ${speaker.name}`;
+  utterance.onend = () => {
+    currentStoryIndex += 1;
+    speakTranscriptLine();
+  };
+  window.speechSynthesis.speak(utterance);
+}
+
+function playTranscript() {
+  if (!("speechSynthesis" in window)) {
+    window.alert("This browser does not support story playback.");
+    return;
+  }
+
+  if (!transcript.length) {
+    window.alert("Tell a story first.");
+    return;
+  }
+
+  stopSpeech();
+  storyStatus.textContent = "Playing";
+  speakTranscriptLine();
+}
+
 function renderSlot(slot) {
   const fragment = template.content.cloneNode(true);
   const article = fragment.querySelector(".voice-slot");
@@ -136,7 +369,7 @@ function renderSlot(slot) {
   const meta = fragment.querySelector(".reference-meta");
 
   article.dataset.slot = String(slot.index + 1);
-  number.textContent = `Voice ${slot.index + 1}`;
+  number.textContent = slot.index === 0 ? "Voice 1 · Narrator" : `Voice ${slot.index + 1} · Character`;
   nameInput.value = slot.name;
   textInput.value = slot.text;
   status.textContent = slot.blob ? "Reference ready" : "Empty";
@@ -222,9 +455,15 @@ exportJson.addEventListener("click", async () => {
   URL.revokeObjectURL(link.href);
 });
 
+tellStory.addEventListener("click", makeStory);
+playStory.addEventListener("click", playTranscript);
+stopStory.addEventListener("click", stopSpeech);
+
 if ("speechSynthesis" in window) {
   window.speechSynthesis.addEventListener?.("voiceschanged", () => {});
 }
+
+llmEndpoint.value = localStorage.getItem(STORY_ENDPOINT_KEY) || "";
 
 openDb()
   .then((database) => {
