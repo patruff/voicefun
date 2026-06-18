@@ -2,6 +2,7 @@ const DB_NAME = "voicefun";
 const DB_VERSION = 1;
 const STORE = "voices";
 const SLOT_COUNT = 9;
+const DEFAULT_STORY_ENDPOINT = "/api/story";
 const STORY_ENDPOINT_KEY = "voicefun-story-endpoint";
 
 const board = document.querySelector("#voiceBoard");
@@ -463,7 +464,7 @@ if ("speechSynthesis" in window) {
   window.speechSynthesis.addEventListener?.("voiceschanged", () => {});
 }
 
-llmEndpoint.value = localStorage.getItem(STORY_ENDPOINT_KEY) || "";
+llmEndpoint.value = localStorage.getItem(STORY_ENDPOINT_KEY) || DEFAULT_STORY_ENDPOINT;
 
 openDb()
   .then((database) => {

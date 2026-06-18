@@ -1,0 +1,128 @@
+const MODEL = process.env.OPENAI_STORY_MODEL || "gpt-5.4-nano";
+const API_URL = "https://api.openai.com/v1/responses";
+
+function normalizePhrases(input) {
+  if (Array.isArray(input)) return input.map(String).map((phrase) => phrase.trim()).filter(Boolean);
+  return String(input || "")
+    .split(/\n|,/)
+    .map((phrase) => phrase.trim())
+    .filter(Boolean);
+}
+
+function normalizeVoices(input) {
+  const voices = Array.isArray(input) ? input : [];
+  return Array.from({ length: 9 }, (_, index) => {
+    const provided = voices.find((voice) => Number(voice.slot) === index + 1) || {};
+    return {
+      slot: index + 1,
+      name: provided.name || (index === 0 ? "Narrator" : `Character ${index + 1}`),
+      role: index === 0 ? "narrator" : "character",
+      hasReference: Boolean(provided.hasReference),
+      fileName: provided.fileName || ""
+    };
+  });
+}
+
+function storyPrompt({ phrases, voices }) {
+  return [
+    "Write a short, vivid audio-drama transcript.",
+    "Voice slot 1 is the narrator. Use slot 1 only for narration.",
+    "Voice slots 2 through 9 are characters. Use those slots for dialogue.",
+    "Every required phrase must appear exactly as written in at least one character dialogue line, never only in narration.",
+    "Keep each line concise enough for spoken playback.",
+    "Return JSON only with this exact shape:",
+    "{\"transcript\":[{\"slot\":1,\"text\":\"...\"},{\"slot\":2,\"text\":\"...\"}]}",
+    `Voices: ${JSON.stringify(voices)}`,
+    `Required phrases: ${JSON.stringify(phrases)}`
+  ].join("\n");
+}
+
+function extractOutputText(payload) {
+  if (payload.output_text) return payload.output_text;
+
+  const chunks = [];
+  for (const item of payload.output || []) {
+    for (const content of item.content || []) {
+      if (content.type === "output_text" && content.text) chunks.push(content.text);
+      if (content.type === "text" && content.text) chunks.push(content.text);
+    }
+  }
+  return chunks.join("\n");
+}
+
+function normalizeTranscript(value) {
+  const rawLines = Array.isArray(value) ? value : value?.transcript || value?.lines || [];
+  return rawLines
+    .map((line, index) => {
+      const slot = Number(line.slot || line.voice || line.voiceSlot || line.speakerSlot);
+      return {
+        slot: Number.isInteger(slot) && slot >= 1 && slot <= 9 ? slot : (index % 9) + 1,
+        text: String(line.text || line.line || line.dialogue || "").trim()
+      };
+    })
+    .filter((line) => line.text)
+    .map((line) => ({
+      slot: line.slot === 1 ? 1 : Math.max(2, Math.min(9, line.slot)),
+      text: line.text
+    }));
+}
+
+function missingPhrases(lines, phrases) {
+  const characterText = lines
+    .filter((line) => Number(line.slot) > 1)
+    .map((line) => line.text.toLowerCase())
+    .join("\n");
+
+  return phrases.filter((phrase) => !characterText.includes(phrase.toLowerCase()));
+}
+
+export async function generateStory({ phrases: phraseInput, voices: voiceInput }) {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new Error("OPENAI_API_KEY is not set");
+  }
+
+  const phrases = normalizePhrases(phraseInput);
+  const voices = normalizeVoices(voiceInput);
+  const response = await fetch(API_URL, {
+    method: "POST",
+    headers: {
+      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      model: MODEL,
+      input: storyPrompt({ phrases, voices })
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`OpenAI request failed with ${response.status}: ${errorText}`);
+  }
+
+  const payload = await response.json();
+  const parsed = JSON.parse(extractOutputText(payload));
+  const transcript = normalizeTranscript(parsed);
+  const missing = missingPhrases(transcript, phrases);
+
+  if (missing.length) {
+    throw new Error(`OpenAI transcript missed required phrases: ${missing.join(", ")}`);
+  }
+
+  return {
+    model: MODEL,
+    transcript
+  };
+}
+
+if (import.meta.url === `file://${process.argv[1]}`) {
+  const input = JSON.parse(process.argv[2] || "{}");
+  generateStory(input)
+    .then((story) => {
+      process.stdout.write(`${JSON.stringify(story, null, 2)}\n`);
+    })
+    .catch((error) => {
+      process.stderr.write(`${error.stack || error.message}\n`);
+      process.exitCode = 1;
+    });
+}

@@ -1,0 +1,39 @@
+name: Generate story transcript
+
+on:
+  workflow_dispatch:
+    inputs:
+      phrases:
+        description: "Required phrases, one per line or comma separated"
+        required: true
+        type: string
+      voices_json:
+        description: "Optional voices JSON array with slot, name, hasReference, fileName"
+        required: false
+        default: "[]"
+        type: string
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Generate transcript with OpenAI
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          PHRASES: ${{ inputs.phrases }}
+          VOICES_JSON: ${{ inputs.voices_json }}
+        run: |
+          node scripts/generate-story.mjs "$(jq -cn --arg phrases "$PHRASES" --argjson voices "$VOICES_JSON" '{phrases: $phrases, voices: $voices}')" > story-transcript.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: story-transcript
+          path: story-transcript.json

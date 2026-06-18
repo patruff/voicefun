@@ -17,8 +17,32 @@ It defaults to `.wav` because Smart Recorder on Android exports WAV files. The a
 - Play the generated transcript line by line.
 - Export a voice-board manifest.
 
+## OpenAI story teller
+
+The repo includes a server-side OpenAI story generator at `scripts/generate-story.mjs`. It uses `gpt-5.4-nano` by default and expects `OPENAI_API_KEY` to be set in the server environment.
+
+There is also a Vercel-style serverless function at `api/story.js` that accepts:
+
+```json
+{
+  "phrases": ["silver moon", "secret door"],
+  "voices": [{ "slot": 1, "name": "Narrator", "hasReference": true }]
+}
+```
+
+It returns:
+
+```json
+{
+  "model": "gpt-5.4-nano",
+  "transcript": [{ "slot": 1, "text": "..." }]
+}
+```
+
+The GitHub Actions workflow `Generate story transcript` can use the repository `OPENAI_API_KEY` secret safely and upload a `story-transcript.json` artifact.
+
 ## Important limitation
 
-GitHub Pages is static hosting. It cannot run a voice-cloning model by itself, store files on a server, or call private APIs safely. The current play buttons use the browser speech engine; uploaded WAV files are stored and tied to their slots so a future backend/API can replace playback with real cloned-voice synthesis. For LLM story writing, point the LLM endpoint field at your own small API that accepts `{ prompt, voices, phrases }` and returns `{ "transcript": [{ "slot": 1, "text": "..." }] }`.
+GitHub Pages is static hosting. It cannot read GitHub secrets, run a voice-cloning model, store files on a server, or call private APIs safely. The current play buttons use the browser speech engine; uploaded WAV files are stored and tied to their slots so a future backend/API can replace playback with real cloned-voice synthesis. The page defaults to calling `/api/story`, but GitHub Pages will fall back to local transcript generation unless you deploy a serverless/backend host for that endpoint.
 
 Only clone voices you own or have explicit permission to use.
