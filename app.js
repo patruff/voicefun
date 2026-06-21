@@ -598,21 +598,28 @@ function buildStoryPrompt(phrases, designatedLines) {
   }));
 
   return [
-    "Write a very short audio drama transcript as JSON only.",
-    "It should sound like natural people being funny out loud.",
-    "Keep it tight: 8 to 12 total lines.",
-    "Make the humor specific, conversational, and surprising. Prioritize real comic timing over plot.",
-    "Use natural dialogue: quick setup, character reaction, escalation, punchline.",
+    "Write a very short comedy-show sketch as an audio drama transcript. Return JSON only.",
+    "The sketch must have one clear comic premise, a setup, escalating confusion, a callback, and a final punchline.",
+    "Keep it tight: 10 to 16 total lines when possible.",
+    "If required phrases or designated lines make 16 lines impossible, use the shortest coherent sketch that includes every required item.",
+    "Make the humor specific, conversational, and surprising. Prioritize real comic timing over plot mechanics.",
+    "Use natural spoken dialogue with interruptions, misunderstandings, quick reactions, and emotional punctuation.",
+    "The chosen designated lines are raw ingredients, not the whole story.",
+    "Add your own funny lines before and after the designated lines so they land naturally as punchlines, reveals, or turns.",
+    "Spread designated lines through the sketch. Do not place them back-to-back unless that creates a clear joke.",
+    "Use only characters that help the sketch. Do not force every available voice to speak.",
     "Do not repeat the same joke, phrase structure, character reaction, or narrator setup.",
     "Do not have multiple characters say basically the same thing.",
-    "Do not pad with generic adventure, mystery, quest, meeting, prophecy, or sandwich filler.",
-    "Use voice slot 1 sparingly as the narrator for setup, transitions, and dry reactions.",
+    "Do not write a list of disconnected one-liners.",
+    "Do not pad with generic adventure, mystery, quest, meeting, prophecy, or random-object filler.",
+    "Use voice slot 1 sparingly as the narrator for opening setup, one dry turn, and maybe the closing button.",
     "Use voice slots 2-9 for character dialogue.",
     "Every must-use phrase must appear exactly as written in at least one character line, not in narrator-only text.",
     "Every designated line must appear exactly as written at least once, spoken by its assigned slot.",
-    "Build the story around the designated lines so they feel intentional, not pasted in.",
+    "A designated line may be preceded or followed by extra funny text in nearby lines, but the designated line itself must remain exact.",
     "Keep each line concise enough for spoken playback, but make each line distinct.",
-    "Before returning, silently check that no two lines are redundant.",
+    "Use punctuation to imply delivery, surprise, panic, confidence, deadpan, or hesitation, but do not include stage directions or bracketed emotions.",
+    "Before returning, silently check that the sketch is coherent and no two lines are redundant.",
     "Return this schema: {\"transcript\":[{\"slot\":1,\"text\":\"...\"},{\"slot\":2,\"text\":\"...\"}]}",
     `Voices: ${JSON.stringify(voices)}`,
     `Must use phrases: ${JSON.stringify(phrases)}`,
@@ -664,51 +671,66 @@ async function callStoryEndpoint(phrases, designatedLines) {
 
 function localStory(phrases, designatedLines = []) {
   const characterSlots = Array.from({ length: SLOT_COUNT - 1 }, (_, index) => index + 2);
-  const titleSeed = phrases[0] || designatedLines[0]?.text || "the missing remote";
-  const reactions = [
-    "Everyone stared like that somehow made perfect sense.",
-    "There was a tiny pause, which did most of the comedy work.",
-    "Nobody wanted to admit it, but the logic was flawless.",
-    "The room got quiet in the exact way a room gets quiet before bad decisions."
-  ];
+  const topic = phrases[0] || "the emergency talent show";
+  const featured = designatedLines;
+  const nextCharacterSlot = (offset) => characterSlots[offset % characterSlots.length];
   const lines = [
     {
       slot: 1,
-      text: `${displayName(slots[0])} found everyone arguing about ${titleSeed} like it was a federal case.`
+      text: `${displayName(slots[0])} opened the show by announcing a simple plan about ${topic}. It immediately became suspiciously complicated.`
     },
     {
-      slot: 2,
-      text: `${displayName(slots[1])} said, "I have a plan, but legally it is mostly nonsense."`
+      slot: nextCharacterSlot(0),
+      text: "Okay, nobody panic. I have made a clipboard, so this is technically organized."
+    },
+    {
+      slot: nextCharacterSlot(1),
+      text: "That clipboard is a menu with the word 'science' written on it."
     }
   ];
 
-  designatedLines.forEach((line, index) => {
+  if (featured[0]) {
     lines.push({
-      slot: line.slot,
-      text: line.text
+      slot: nextCharacterSlot(2),
+      text: "Wait. Everyone be quiet. I think our first witness is about to make this weirder."
     });
+    lines.push({ slot: featured[0].slot, text: featured[0].text });
+  }
+
+  if (featured[1]) {
     lines.push({
       slot: 1,
-      text: reactions[index % reactions.length]
+      text: "That was not evidence, but it did make everyone stand farther from the clipboard."
+    });
+    lines.push({
+      slot: nextCharacterSlot(3),
+      text: "I would like to object, but I do not know what trial this is."
+    });
+    lines.push({ slot: featured[1].slot, text: featured[1].text });
+  }
+
+  phrases.slice(0, 3).forEach((phrase, index) => {
+    lines.push({
+      slot: nextCharacterSlot(index + 4),
+      text: `Fine, new rule: whoever says "${phrase}" has to explain why it sounds like a password.`
     });
   });
 
-  phrases.forEach((phrase, index) => {
-    const slot = characterSlots[index % characterSlots.length];
-    const speaker = displayName(slots[slot - 1]);
+  featured.slice(2).forEach((line, index) => {
     lines.push({
-      slot,
-      text: `${speaker} leaned in and said, "${phrase}," like that was the password to a very dumb club.`
+      slot: nextCharacterSlot(index + 6),
+      text: "I can fix this. I just need everyone to ignore the next sentence completely."
     });
+    lines.push({ slot: line.slot, text: line.text });
   });
 
   lines.push({
-    slot: characterSlots[(phrases.length + 1) % characterSlots.length],
-    text: "Then someone suggested solving it with interpretive yelling, and unfortunately everyone agreed."
+    slot: nextCharacterSlot(7),
+    text: "Great. Somehow the plan has gotten worse, but the confidence has gone way up."
   });
   lines.push({
     slot: 1,
-    text: `${displayName(slots[0])} ended the story before the plan could become paperwork.`
+    text: `${displayName(slots[0])} ended the sketch there, because one more idea would have required a permit.`
   });
 
   return lines;
