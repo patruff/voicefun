@@ -534,6 +534,18 @@ function speakerForLine(line) {
   };
 }
 
+function availableStorySlots() {
+  return slots
+    .filter((slot) => slot.voiceboxProfileId || slot.voiceboxProfileName)
+    .map((slot) => slot.index + 1);
+}
+
+function firstAvailableSlot(preferCharacter = false) {
+  const available = availableStorySlots();
+  const character = available.find((slotNumber) => slotNumber > 1);
+  return preferCharacter ? character || available[0] || 1 : available[0] || 1;
+}
+
 function renderTranscript(lines) {
   storyTranscript.textContent = "";
 
@@ -571,6 +583,32 @@ function normalizeTranscript(value) {
     }));
 }
 
+function sanitizeTranscriptSlots(lines, designatedLines) {
+  const available = new Set(availableStorySlots());
+  if (!available.size) {
+    throw new Error("No synced Voicebox voices are available for story audio.");
+  }
+
+  return lines.map((line) => {
+    if (available.has(Number(line.slot))) return line;
+
+    const isDesignatedLine = designatedLines.some((designated) => (
+      Number(designated.slot) === Number(line.slot) &&
+      designated.text.toLowerCase() === line.text.toLowerCase()
+    ));
+
+    if (isDesignatedLine) {
+      const speaker = displayName(slots[Number(line.slot) - 1]);
+      throw new Error(`${speaker} is used in a designated line but is not synced with Voicebox.`);
+    }
+
+    return {
+      ...line,
+      slot: firstAvailableSlot(Number(line.slot) > 1)
+    };
+  });
+}
+
 function missingPhrases(lines, phrases) {
   const characterText = lines
     .filter((line) => Number(line.slot) > 1)
@@ -594,8 +632,9 @@ function buildStoryPrompt(phrases, designatedLines) {
     slot: slot.index + 1,
     role: slot.index === 0 ? "narrator" : "character",
     name: displayName(slot),
-    hasReference: Boolean(slot.blob)
+    isSynced: Boolean(slot.voiceboxProfileId || slot.voiceboxProfileName)
   }));
+  const availableSlots = voices.filter((voice) => voice.isSynced).map((voice) => voice.slot);
 
   return [
     "Write a very short comedy-show sketch as an audio drama transcript. Return JSON only.",
@@ -607,13 +646,14 @@ function buildStoryPrompt(phrases, designatedLines) {
     "The chosen designated lines are raw ingredients, not the whole story.",
     "Add your own funny lines before and after the designated lines so they land naturally as punchlines, reveals, or turns.",
     "Spread designated lines through the sketch. Do not place them back-to-back unless that creates a clear joke.",
+    "Use only synced available voices. Do not invent or use any slot that is not listed as available.",
     "Use only characters that help the sketch. Do not force every available voice to speak.",
     "Do not repeat the same joke, phrase structure, character reaction, or narrator setup.",
     "Do not have multiple characters say basically the same thing.",
     "Do not write a list of disconnected one-liners.",
     "Do not pad with generic adventure, mystery, quest, meeting, prophecy, or random-object filler.",
-    "Use voice slot 1 sparingly as the narrator for opening setup, one dry turn, and maybe the closing button.",
-    "Use voice slots 2-9 for character dialogue.",
+    "Use voice slot 1 as narrator only if slot 1 is available.",
+    "Use synced character slots for dialogue.",
     "Every must-use phrase must appear exactly as written in at least one character line, not in narrator-only text.",
     "Every designated line must appear exactly as written at least once, spoken by its assigned slot.",
     "A designated line may be preceded or followed by extra funny text in nearby lines, but the designated line itself must remain exact.",
@@ -621,6 +661,7 @@ function buildStoryPrompt(phrases, designatedLines) {
     "Use punctuation to imply delivery, surprise, panic, confidence, deadpan, or hesitation, but do not include stage directions or bracketed emotions.",
     "Before returning, silently check that the sketch is coherent and no two lines are redundant.",
     "Return this schema: {\"transcript\":[{\"slot\":1,\"text\":\"...\"},{\"slot\":2,\"text\":\"...\"}]}",
+    `Available synced voice slots: ${JSON.stringify(availableSlots)}`,
     `Voices: ${JSON.stringify(voices)}`,
     `Must use phrases: ${JSON.stringify(phrases)}`,
     `Designated lines: ${JSON.stringify(designatedLines)}`
@@ -641,7 +682,7 @@ async function callStoryEndpoint(phrases, designatedLines) {
         slot: slot.index + 1,
         name: displayName(slot),
         role: slot.index === 0 ? "narrator" : "character",
-        hasReference: Boolean(slot.blob),
+        isSynced: Boolean(slot.voiceboxProfileId || slot.voiceboxProfileName),
         fileName: slot.fileName
       })),
       phrases,
@@ -655,7 +696,7 @@ async function callStoryEndpoint(phrases, designatedLines) {
 
   const contentType = response.headers.get("content-type") || "";
   const payload = contentType.includes("application/json") ? await response.json() : JSON.parse(await response.text());
-  const lines = normalizeTranscript(payload);
+  const lines = sanitizeTranscriptSlots(normalizeTranscript(payload), designatedLines);
   const missing = missingPhrases(lines, phrases);
   const missingLines = missingDesignatedLines(lines, designatedLines);
 
@@ -670,14 +711,18 @@ async function callStoryEndpoint(phrases, designatedLines) {
 }
 
 function localStory(phrases, designatedLines = []) {
-  const characterSlots = Array.from({ length: SLOT_COUNT - 1 }, (_, index) => index + 2);
+  const availableSlots = availableStorySlots();
+  const narratorSlot = availableSlots.includes(1) ? 1 : firstAvailableSlot(false);
+  const characterSlots = availableSlots.filter((slotNumber) => slotNumber > 1);
+  const fallbackCharacterSlots = characterSlots.length ? characterSlots : [narratorSlot];
   const topic = phrases[0] || "the emergency talent show";
   const featured = designatedLines;
-  const nextCharacterSlot = (offset) => characterSlots[offset % characterSlots.length];
+  const nextCharacterSlot = (offset) => fallbackCharacterSlots[offset % fallbackCharacterSlots.length];
+  const narratorName = displayName(slots[narratorSlot - 1]);
   const lines = [
     {
-      slot: 1,
-      text: `${displayName(slots[0])} opened the show by announcing a simple plan about ${topic}. It immediately became suspiciously complicated.`
+      slot: narratorSlot,
+      text: `${narratorName} opened the show by announcing a simple plan about ${topic}. It immediately became suspiciously complicated.`
     },
     {
       slot: nextCharacterSlot(0),
@@ -699,7 +744,7 @@ function localStory(phrases, designatedLines = []) {
 
   if (featured[1]) {
     lines.push({
-      slot: 1,
+      slot: narratorSlot,
       text: "That was not evidence, but it did make everyone stand farther from the clipboard."
     });
     lines.push({
@@ -729,8 +774,8 @@ function localStory(phrases, designatedLines = []) {
     text: "Great. Somehow the plan has gotten worse, but the confidence has gone way up."
   });
   lines.push({
-    slot: 1,
-    text: `${displayName(slots[0])} ended the sketch there, because one more idea would have required a permit.`
+    slot: narratorSlot,
+    text: `${narratorName} ended the sketch there, because one more idea would have required a permit.`
   });
 
   return lines;
@@ -746,15 +791,33 @@ async function makeStory() {
   setStoryProgress(0, 1, "Writing");
   storyStatus.textContent = "Writing...";
 
+  if (!availableStorySlots().length) {
+    storyStatus.textContent = "No synced voices";
+    setStoryProgress(0, 1, "Sync voices first");
+    tellStory.disabled = false;
+    playStory.disabled = false;
+    window.alert("Sync at least one voice with Voicebox before creating story audio.");
+    return;
+  }
+
   try {
     const llmLines = await callStoryEndpoint(phrases, designatedLines);
-    transcript = llmLines || localStory(phrases, designatedLines);
+    transcript = llmLines || sanitizeTranscriptSlots(localStory(phrases, designatedLines), designatedLines);
     renderTranscript(transcript);
     storyStatus.textContent = llmLines ? "Transcript from LLM" : "Transcript ready";
   } catch (error) {
-    transcript = localStory(phrases, designatedLines);
-    renderTranscript(transcript);
-    storyStatus.textContent = `Local transcript used: ${error.message}`;
+    try {
+      transcript = sanitizeTranscriptSlots(localStory(phrases, designatedLines), designatedLines);
+      renderTranscript(transcript);
+      storyStatus.textContent = `Local transcript used: ${error.message}`;
+    } catch (fallbackError) {
+      storyStatus.textContent = "Story setup error";
+      setStoryProgress(0, 1, "Setup failed");
+      tellStory.disabled = false;
+      playStory.disabled = false;
+      window.alert(fallbackError.message);
+      return;
+    }
   }
 
   try {

@@ -18,6 +18,7 @@ function normalizeVoices(input) {
       name: provided.name || (index === 0 ? "Narrator" : `Character ${index + 1}`),
       role: index === 0 ? "narrator" : "character",
       hasReference: Boolean(provided.hasReference),
+      isSynced: Boolean(provided.isSynced),
       fileName: provided.fileName || ""
     };
   });
@@ -38,6 +39,8 @@ function normalizeDesignatedLines(input) {
 }
 
 function storyPrompt({ phrases, voices, designatedLines }) {
+  const availableSlots = voices.filter((voice) => voice.isSynced).map((voice) => voice.slot);
+
   return [
     "Write a very short comedy-show sketch as an audio-drama transcript.",
     "The sketch must have one clear comic premise, a setup, escalating confusion, a callback, and a final punchline.",
@@ -48,13 +51,14 @@ function storyPrompt({ phrases, voices, designatedLines }) {
     "The chosen designated lines are raw ingredients, not the whole story.",
     "Add your own funny lines before and after the designated lines so they land naturally as punchlines, reveals, or turns.",
     "Spread designated lines through the sketch. Do not place them back-to-back unless that creates a clear joke.",
+    "Use only synced available voices. Do not invent or use any slot that is not listed as available.",
     "Use only characters that help the sketch. Do not force every available voice to speak.",
     "Do not repeat the same joke, phrase structure, character reaction, or narrator setup.",
     "Do not have multiple characters say basically the same thing.",
     "Do not write a list of disconnected one-liners.",
     "Do not pad with generic adventure, mystery, quest, meeting, prophecy, or random-object filler.",
-    "Voice slot 1 is the narrator. Use slot 1 sparingly for opening setup, one dry turn, and maybe the closing button.",
-    "Voice slots 2 through 9 are characters. Use those slots for dialogue.",
+    "Use voice slot 1 as narrator only if slot 1 is available.",
+    "Use synced character slots for dialogue.",
     "Every required phrase must appear exactly as written in at least one character dialogue line, never only in narration.",
     "Every designated line must appear exactly as written at least once, spoken by its assigned slot.",
     "A designated line may be preceded or followed by extra funny text in nearby lines, but the designated line itself must remain exact.",
@@ -63,10 +67,16 @@ function storyPrompt({ phrases, voices, designatedLines }) {
     "Before returning, silently check that the sketch is coherent and no two lines are redundant.",
     "Return JSON only with this exact shape:",
     "{\"transcript\":[{\"slot\":1,\"text\":\"...\"},{\"slot\":2,\"text\":\"...\"}]}",
+    `Available synced voice slots: ${JSON.stringify(availableSlots)}`,
     `Voices: ${JSON.stringify(voices)}`,
     `Required phrases: ${JSON.stringify(phrases)}`,
     `Designated lines: ${JSON.stringify(designatedLines)}`
   ].join("\n");
+}
+
+function unsupportedSlots(lines, voices) {
+  const available = new Set(voices.filter((voice) => voice.isSynced).map((voice) => voice.slot));
+  return [...new Set(lines.map((line) => line.slot).filter((slot) => !available.has(slot)))];
 }
 
 function extractOutputText(payload) {
@@ -145,9 +155,13 @@ export async function generateStory({ phrases: phraseInput, voices: voiceInput, 
   const payload = await response.json();
   const parsed = JSON.parse(extractOutputText(payload));
   const transcript = normalizeTranscript(parsed);
+  const unsupported = unsupportedSlots(transcript, voices);
   const missing = missingPhrases(transcript, phrases);
   const missingLines = missingDesignatedLines(transcript, designatedLines);
 
+  if (unsupported.length) {
+    throw new Error(`OpenAI transcript used unsynced voice slots: ${unsupported.join(", ")}`);
+  }
   if (missing.length) {
     throw new Error(`OpenAI transcript missed required phrases: ${missing.join(", ")}`);
   }
