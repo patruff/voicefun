@@ -101,6 +101,28 @@ main {
   gap: 10px;
 }
 
+.story-progress-wrap {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+#storyProgress {
+  width: 100%;
+  height: 12px;
+}
+
+#storyProgressText {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+#storyAudio {
+  width: 100%;
+}
+
 .transcript-heading {
   display: flex;
   align-items: center;

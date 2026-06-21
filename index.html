@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>VoiceFun</title>
     <meta name="description" content="A 3 x 3 voice board for WAV reference clips and text playback.">
-    <link rel="stylesheet" href="styles.css?v=20260618-voicebox">
+    <link rel="stylesheet" href="styles.css?v=stitched-story-audio">
   </head>
   <body>
     <header class="app-header">
@@ -47,6 +47,13 @@
             <button class="secondary-button" id="playStory" type="button">Play story</button>
             <button class="ghost-button" id="stopStory" type="button">Stop</button>
           </div>
+
+          <div class="story-progress-wrap">
+            <progress id="storyProgress" value="0" max="1"></progress>
+            <span id="storyProgressText">Idle</span>
+          </div>
+
+          <audio id="storyAudio" controls preload="metadata"></audio>
         </div>
 
         <div class="transcript-wrap">
@@ -99,6 +106,6 @@
       </article>
     </template>
 
-    <script src="app.js?v=funny-story-lines"></script>
+    <script src="app.js?v=stitched-story-audio"></script>
   </body>
 </html>

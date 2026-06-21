@@ -19,6 +19,9 @@ const playStory = document.querySelector("#playStory");
 const stopStory = document.querySelector("#stopStory");
 const storyStatus = document.querySelector("#storyStatus");
 const storyTranscript = document.querySelector("#storyTranscript");
+const storyProgress = document.querySelector("#storyProgress");
+const storyProgressText = document.querySelector("#storyProgressText");
+const storyAudio = document.querySelector("#storyAudio");
 
 let db;
 let slots = [];
@@ -26,6 +29,7 @@ let transcript = [];
 let designatedStoryLines = [];
 let currentStoryIndex = 0;
 let currentVoiceboxAudio = null;
+let storyAudioUrl = "";
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -169,8 +173,25 @@ function stopSpeech() {
     currentVoiceboxAudio.pause();
     currentVoiceboxAudio = null;
   }
+  storyAudio.pause();
   currentStoryIndex = 0;
   storyStatus.textContent = "Stopped";
+}
+
+function clearStoryAudio() {
+  storyAudio.pause();
+  storyAudio.removeAttribute("src");
+  storyAudio.load();
+  if (storyAudioUrl) {
+    URL.revokeObjectURL(storyAudioUrl);
+    storyAudioUrl = "";
+  }
+}
+
+function setStoryProgress(value, max, text) {
+  storyProgress.max = Math.max(1, max);
+  storyProgress.value = Math.max(0, Math.min(value, storyProgress.max));
+  storyProgressText.textContent = text;
 }
 
 async function pollGeneration(id) {
@@ -229,7 +250,7 @@ async function resolveVoiceboxProfileId(slot) {
   return profile.id;
 }
 
-async function speakWithVoicebox(slot, text) {
+async function generateVoiceboxAudioBlob(slot, text) {
   const profileId = await resolveVoiceboxProfileId(slot);
 
   const response = await voiceboxFetch("/generate", {
@@ -245,13 +266,16 @@ async function speakWithVoicebox(slot, text) {
   });
   const generation = await response.json();
   await pollGeneration(generation.id);
-  await playVoiceboxAudio(generation.id);
-  return generation;
+  const audioResponse = await voiceboxFetch(`/audio/${generation.id}`);
+  return audioResponse.blob();
 }
 
-async function playVoiceboxAudio(generationId) {
-  const response = await voiceboxFetch(`/audio/${generationId}`);
-  const blob = await response.blob();
+async function speakWithVoicebox(slot, text) {
+  const blob = await generateVoiceboxAudioBlob(slot, text);
+  await playAudioBlob(blob);
+}
+
+async function playAudioBlob(blob) {
   const url = URL.createObjectURL(blob);
   const audio = new Audio(url);
 
@@ -269,6 +293,132 @@ async function playVoiceboxAudio(generationId) {
   URL.revokeObjectURL(url);
   if (currentVoiceboxAudio === audio) {
     currentVoiceboxAudio = null;
+  }
+}
+
+async function decodeAudioBlob(audioContext, blob) {
+  const arrayBuffer = await blob.arrayBuffer();
+  return audioContext.decodeAudioData(arrayBuffer);
+}
+
+async function resampleBuffer(buffer, sampleRate) {
+  if (buffer.sampleRate === sampleRate) return buffer;
+
+  const frameCount = Math.ceil(buffer.duration * sampleRate);
+  const offline = new OfflineAudioContext(buffer.numberOfChannels, frameCount, sampleRate);
+  const source = offline.createBufferSource();
+  source.buffer = buffer;
+  source.connect(offline.destination);
+  source.start();
+  return offline.startRendering();
+}
+
+function concatenateBuffers(buffers) {
+  const sampleRate = buffers[0].sampleRate;
+  const channelCount = Math.max(...buffers.map((buffer) => buffer.numberOfChannels));
+  const totalLength = buffers.reduce((sum, buffer) => sum + buffer.length, 0);
+  const output = new AudioBuffer({
+    length: totalLength,
+    numberOfChannels: channelCount,
+    sampleRate
+  });
+  let offset = 0;
+
+  for (const buffer of buffers) {
+    for (let channel = 0; channel < channelCount; channel += 1) {
+      const input = buffer.getChannelData(Math.min(channel, buffer.numberOfChannels - 1));
+      output.copyToChannel(input, channel, offset);
+    }
+    offset += buffer.length;
+  }
+
+  return output;
+}
+
+function audioBufferToWav(buffer) {
+  const channelCount = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const samples = buffer.length;
+  const bytesPerSample = 2;
+  const blockAlign = channelCount * bytesPerSample;
+  const dataSize = samples * blockAlign;
+  const arrayBuffer = new ArrayBuffer(44 + dataSize);
+  const view = new DataView(arrayBuffer);
+  let offset = 0;
+
+  function writeString(value) {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset, value.charCodeAt(index));
+      offset += 1;
+    }
+  }
+
+  writeString("RIFF");
+  view.setUint32(offset, 36 + dataSize, true); offset += 4;
+  writeString("WAVE");
+  writeString("fmt ");
+  view.setUint32(offset, 16, true); offset += 4;
+  view.setUint16(offset, 1, true); offset += 2;
+  view.setUint16(offset, channelCount, true); offset += 2;
+  view.setUint32(offset, sampleRate, true); offset += 4;
+  view.setUint32(offset, sampleRate * blockAlign, true); offset += 4;
+  view.setUint16(offset, blockAlign, true); offset += 2;
+  view.setUint16(offset, 16, true); offset += 2;
+  writeString("data");
+  view.setUint32(offset, dataSize, true); offset += 4;
+
+  const channels = Array.from({ length: channelCount }, (_, channel) => buffer.getChannelData(channel));
+  for (let sample = 0; sample < samples; sample += 1) {
+    for (let channel = 0; channel < channelCount; channel += 1) {
+      const value = Math.max(-1, Math.min(1, channels[channel][sample]));
+      view.setInt16(offset, value < 0 ? value * 0x8000 : value * 0x7fff, true);
+      offset += 2;
+    }
+  }
+
+  return new Blob([arrayBuffer], { type: "audio/wav" });
+}
+
+async function buildStoryAudio(lines) {
+  if (!lines.length) return;
+
+  clearStoryAudio();
+  const audioContext = new AudioContext();
+  const decodedBuffers = [];
+  setStoryProgress(0, lines.length + 1, "Starting audio");
+
+  try {
+    for (let index = 0; index < lines.length; index += 1) {
+      const line = lines[index];
+      const speaker = speakerForLine(line);
+      const slot = slots[speaker.slotIndex];
+
+      if (!hasVoiceboxProfile(slot)) {
+        throw new Error(`${speaker.name} is not synced with Voicebox.`);
+      }
+
+      storyStatus.textContent = `Generating ${speaker.name}`;
+      setStoryProgress(index, lines.length + 1, `${index + 1}/${lines.length}: ${speaker.name}`);
+      const blob = await generateVoiceboxAudioBlob(slot, line.text);
+      decodedBuffers.push(await decodeAudioBlob(audioContext, blob));
+    }
+
+    storyStatus.textContent = "Stitching audio";
+    setStoryProgress(lines.length, lines.length + 1, "Stitching");
+    const sampleRate = decodedBuffers[0].sampleRate;
+    const normalizedBuffers = [];
+    for (const buffer of decodedBuffers) {
+      normalizedBuffers.push(await resampleBuffer(buffer, sampleRate));
+    }
+    const stitched = concatenateBuffers(normalizedBuffers);
+    const wav = audioBufferToWav(stitched);
+    storyAudioUrl = URL.createObjectURL(wav);
+    storyAudio.src = storyAudioUrl;
+    storyAudio.load();
+    setStoryProgress(lines.length + 1, lines.length + 1, `Ready · ${bytesToSize(wav.size)}`);
+    storyStatus.textContent = "Story audio ready";
+  } finally {
+    await audioContext.close();
   }
 }
 
@@ -521,7 +671,10 @@ async function makeStory() {
   const phrases = getPhrases();
   const designatedLines = designatedStoryLines.length ? designatedStoryLines : getDesignatedLines();
   tellStory.disabled = true;
+  playStory.disabled = true;
   stopSpeech();
+  clearStoryAudio();
+  setStoryProgress(0, 1, "Writing");
   storyStatus.textContent = "Writing...";
 
   try {
@@ -533,8 +686,17 @@ async function makeStory() {
     transcript = localStory(phrases, designatedLines);
     renderTranscript(transcript);
     storyStatus.textContent = `Local transcript used: ${error.message}`;
+  }
+
+  try {
+    await buildStoryAudio(transcript);
+  } catch (error) {
+    storyStatus.textContent = "Audio build error";
+    setStoryProgress(0, 1, "Audio failed");
+    window.alert(voiceboxHelp(error));
   } finally {
     tellStory.disabled = false;
+    playStory.disabled = false;
   }
 }
 
@@ -577,14 +739,34 @@ async function speakTranscriptLine() {
 }
 
 function playTranscript() {
-  if (!transcript.length) {
-    window.alert("Tell a story first.");
+  if (storyAudio.src) {
+    stopSpeech();
+    storyStatus.textContent = "Playing story audio";
+    storyAudio.currentTime = 0;
+    storyAudio.play();
     return;
   }
 
-  stopSpeech();
-  storyStatus.textContent = "Playing";
-  speakTranscriptLine();
+  if (!transcript.length) {
+    window.alert("Create a story first.");
+    return;
+  }
+
+  tellStory.disabled = true;
+  playStory.disabled = true;
+  buildStoryAudio(transcript)
+    .then(() => {
+      storyAudio.currentTime = 0;
+      return storyAudio.play();
+    })
+    .catch((error) => {
+      storyStatus.textContent = "Audio build error";
+      window.alert(voiceboxHelp(error));
+    })
+    .finally(() => {
+      tellStory.disabled = false;
+      playStory.disabled = false;
+    });
 }
 
 async function addTextToStory(index) {
