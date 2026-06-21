@@ -1,4 +1,4 @@
-const MODEL = process.env.OPENAI_STORY_MODEL || "gpt-5.4-nano";
+const MODEL = process.env.OPENAI_STORY_MODEL || "gpt-5.4";
 const API_URL = "https://api.openai.com/v1/responses";
 
 function normalizePhrases(input) {
@@ -39,15 +39,20 @@ function normalizeDesignatedLines(input) {
 
 function storyPrompt({ phrases, voices, designatedLines }) {
   return [
-    "Write a very short, very funny audio-drama transcript.",
-    "Keep it tight: 8 to 14 total lines.",
-    "Make the humor specific, silly, and punchy. Avoid generic adventure filler.",
-    "Voice slot 1 is the narrator. Use slot 1 for narration, setup, and reactions.",
+    "Write a very short audio-drama transcript that sounds like natural people being funny out loud.",
+    "Keep it tight: 8 to 12 total lines.",
+    "Make the humor specific, conversational, and surprising. Prioritize real comic timing over plot.",
+    "Use natural dialogue: quick setup, character reaction, escalation, punchline.",
+    "Do not repeat the same joke, phrase structure, character reaction, or narrator setup.",
+    "Do not have multiple characters say basically the same thing.",
+    "Do not pad with generic adventure, mystery, quest, meeting, prophecy, or sandwich filler.",
+    "Voice slot 1 is the narrator. Use slot 1 sparingly for setup, transitions, and dry reactions.",
     "Voice slots 2 through 9 are characters. Use those slots for dialogue.",
     "Every required phrase must appear exactly as written in at least one character dialogue line, never only in narration.",
     "Every designated line must appear exactly as written at least once, spoken by its assigned slot.",
-    "You may add short setup, reaction, and button lines around the designated lines.",
-    "Keep each line concise enough for spoken playback.",
+    "Build the story around the designated lines so they feel intentional, not pasted in.",
+    "Keep each line concise enough for spoken playback, but make each line distinct.",
+    "Before returning, silently check that no two lines are redundant.",
     "Return JSON only with this exact shape:",
     "{\"transcript\":[{\"slot\":1,\"text\":\"...\"},{\"slot\":2,\"text\":\"...\"}]}",
     `Voices: ${JSON.stringify(voices)}`,

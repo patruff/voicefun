@@ -52,7 +52,7 @@ If you run VoiceFun locally, use your local origin instead, such as `http://127.
 
 ## OpenAI story teller
 
-The repo includes a server-side OpenAI story generator at `scripts/generate-story.mjs`. It uses `gpt-5.4-nano` by default and expects `OPENAI_API_KEY` to be set in the server environment.
+The repo includes a server-side OpenAI story generator at `scripts/generate-story.mjs`. It uses `gpt-5.4` by default and expects `OPENAI_API_KEY` to be set in the server environment. Set `OPENAI_STORY_MODEL` if you want to override the model.
 
 There is also a Vercel-style serverless function at `api/story.js` that accepts:
 
@@ -67,7 +67,7 @@ It returns:
 
 ```json
 {
-  "model": "gpt-5.4-nano",
+  "model": "gpt-5.4",
   "transcript": [{ "slot": 1, "text": "..." }]
 }
 ```

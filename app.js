@@ -598,14 +598,21 @@ function buildStoryPrompt(phrases, designatedLines) {
   }));
 
   return [
-    "Write a very short, very funny audio drama transcript as JSON only.",
-    "Keep it tight: 8 to 14 total lines.",
-    "Make the humor specific, silly, and punchy. Avoid generic adventure filler.",
-    "Use voice slot 1 as the narrator who sets up and reacts to the joke.",
+    "Write a very short audio drama transcript as JSON only.",
+    "It should sound like natural people being funny out loud.",
+    "Keep it tight: 8 to 12 total lines.",
+    "Make the humor specific, conversational, and surprising. Prioritize real comic timing over plot.",
+    "Use natural dialogue: quick setup, character reaction, escalation, punchline.",
+    "Do not repeat the same joke, phrase structure, character reaction, or narrator setup.",
+    "Do not have multiple characters say basically the same thing.",
+    "Do not pad with generic adventure, mystery, quest, meeting, prophecy, or sandwich filler.",
+    "Use voice slot 1 sparingly as the narrator for setup, transitions, and dry reactions.",
     "Use voice slots 2-9 for character dialogue.",
     "Every must-use phrase must appear exactly as written in at least one character line, not in narrator-only text.",
     "Every designated line must appear exactly as written at least once, spoken by its assigned slot.",
-    "You may add short setup, reaction, and button lines around the designated lines.",
+    "Build the story around the designated lines so they feel intentional, not pasted in.",
+    "Keep each line concise enough for spoken playback, but make each line distinct.",
+    "Before returning, silently check that no two lines are redundant.",
     "Return this schema: {\"transcript\":[{\"slot\":1,\"text\":\"...\"},{\"slot\":2,\"text\":\"...\"}]}",
     `Voices: ${JSON.stringify(voices)}`,
     `Must use phrases: ${JSON.stringify(phrases)}`,
@@ -657,33 +664,33 @@ async function callStoryEndpoint(phrases, designatedLines) {
 
 function localStory(phrases, designatedLines = []) {
   const characterSlots = Array.from({ length: SLOT_COUNT - 1 }, (_, index) => index + 2);
-  const titleSeed = phrases[0] || designatedLines[0]?.text || "the suspiciously tiny kazoo";
+  const titleSeed = phrases[0] || designatedLines[0]?.text || "the missing remote";
+  const reactions = [
+    "Everyone stared like that somehow made perfect sense.",
+    "There was a tiny pause, which did most of the comedy work.",
+    "Nobody wanted to admit it, but the logic was flawless.",
+    "The room got quiet in the exact way a room gets quiet before bad decisions."
+  ];
   const lines = [
     {
       slot: 1,
-      text: `${displayName(slots[0])} announced a very serious meeting about ${titleSeed}, then immediately lost the agenda.`
+      text: `${displayName(slots[0])} found everyone arguing about ${titleSeed} like it was a federal case.`
     },
     {
       slot: 2,
-      text: `${displayName(slots[1])} whispered that the agenda was probably wearing tiny sunglasses.`
+      text: `${displayName(slots[1])} said, "I have a plan, but legally it is mostly nonsense."`
     }
   ];
 
   designatedLines.forEach((line, index) => {
     lines.push({
-      slot: 1,
-      text: `${displayName(slots[0])} pointed at ${line.speaker} like this explained absolutely everything.`
-    });
-    lines.push({
       slot: line.slot,
       text: line.text
     });
-    if (index === 0) {
-      lines.push({
-        slot: characterSlots[index % characterSlots.length],
-        text: "Nobody knew what that meant, but everyone nodded like furniture was watching."
-      });
-    }
+    lines.push({
+      slot: 1,
+      text: reactions[index % reactions.length]
+    });
   });
 
   phrases.forEach((phrase, index) => {
@@ -691,21 +698,17 @@ function localStory(phrases, designatedLines = []) {
     const speaker = displayName(slots[slot - 1]);
     lines.push({
       slot,
-      text: `${speaker} said, "${phrase}," and the room immediately voted to blame the sandwich.`
-    });
-    lines.push({
-      slot: 1,
-      text: `${displayName(slots[0])} wrote that down as evidence, then underlined the sandwich twice.`
+      text: `${speaker} leaned in and said, "${phrase}," like that was the password to a very dumb club.`
     });
   });
 
   lines.push({
     slot: characterSlots[(phrases.length + 1) % characterSlots.length],
-    text: "In the end, the agenda returned and demanded a snack break."
+    text: "Then someone suggested solving it with interpretive yelling, and unfortunately everyone agreed."
   });
   lines.push({
     slot: 1,
-    text: `${displayName(slots[0])} declared the meeting a success, mostly because nobody had to understand it.`
+    text: `${displayName(slots[0])} ended the story before the plan could become paperwork.`
   });
 
   return lines;
