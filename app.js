@@ -23,6 +23,7 @@ const storyTranscript = document.querySelector("#storyTranscript");
 let db;
 let slots = [];
 let transcript = [];
+let designatedStoryLines = [];
 let currentStoryIndex = 0;
 let currentVoiceboxAudio = null;
 
@@ -320,6 +321,16 @@ function getPhrases() {
     .filter(Boolean);
 }
 
+function getDesignatedLines() {
+  return transcript
+    .filter((line) => line.text && Number(line.slot) >= 1 && Number(line.slot) <= SLOT_COUNT)
+    .map((line) => ({
+      slot: Number(line.slot),
+      speaker: displayName(slots[Number(line.slot) - 1]),
+      text: line.text
+    }));
+}
+
 function speakerForLine(line) {
   const slotIndex = Math.max(0, Math.min(SLOT_COUNT - 1, Number(line.slot) - 1 || 0));
   return {
@@ -375,7 +386,16 @@ function missingPhrases(lines, phrases) {
   return phrases.filter((phrase) => !characterText.includes(phrase.toLowerCase()));
 }
 
-function buildStoryPrompt(phrases) {
+function missingDesignatedLines(lines, designatedLines) {
+  const storyText = lines
+    .map((line) => `${line.slot}: ${line.text}`)
+    .join("\n")
+    .toLowerCase();
+
+  return designatedLines.filter((line) => !storyText.includes(line.text.toLowerCase()));
+}
+
+function buildStoryPrompt(phrases, designatedLines) {
   const voices = slots.map((slot) => ({
     slot: slot.index + 1,
     role: slot.index === 0 ? "narrator" : "character",
@@ -384,17 +404,22 @@ function buildStoryPrompt(phrases) {
   }));
 
   return [
-    "Write a short, lively audio drama transcript as JSON only.",
-    "Use voice slot 1 only for narrator lines.",
+    "Write a very short, very funny audio drama transcript as JSON only.",
+    "Keep it tight: 8 to 14 total lines.",
+    "Make the humor specific, silly, and punchy. Avoid generic adventure filler.",
+    "Use voice slot 1 as the narrator who sets up and reacts to the joke.",
     "Use voice slots 2-9 for character dialogue.",
-    "Every phrase must appear exactly as written in at least one character line, not in narrator-only text.",
+    "Every must-use phrase must appear exactly as written in at least one character line, not in narrator-only text.",
+    "Every designated line must appear exactly as written at least once, spoken by its assigned slot.",
+    "You may add short setup, reaction, and button lines around the designated lines.",
     "Return this schema: {\"transcript\":[{\"slot\":1,\"text\":\"...\"},{\"slot\":2,\"text\":\"...\"}]}",
     `Voices: ${JSON.stringify(voices)}`,
-    `Must use phrases: ${JSON.stringify(phrases)}`
+    `Must use phrases: ${JSON.stringify(phrases)}`,
+    `Designated lines: ${JSON.stringify(designatedLines)}`
   ].join("\n");
 }
 
-async function callStoryEndpoint(phrases) {
+async function callStoryEndpoint(phrases, designatedLines) {
   const endpoint = llmEndpoint.value.trim();
   if (!endpoint) return null;
 
@@ -403,7 +428,7 @@ async function callStoryEndpoint(phrases) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      prompt: buildStoryPrompt(phrases),
+      prompt: buildStoryPrompt(phrases, designatedLines),
       voices: slots.map((slot) => ({
         slot: slot.index + 1,
         name: displayName(slot),
@@ -411,7 +436,8 @@ async function callStoryEndpoint(phrases) {
         hasReference: Boolean(slot.blob),
         fileName: slot.fileName
       })),
-      phrases
+      phrases,
+      designatedLines
     })
   });
 
@@ -423,48 +449,69 @@ async function callStoryEndpoint(phrases) {
   const payload = contentType.includes("application/json") ? await response.json() : JSON.parse(await response.text());
   const lines = normalizeTranscript(payload);
   const missing = missingPhrases(lines, phrases);
+  const missingLines = missingDesignatedLines(lines, designatedLines);
 
   if (missing.length) {
     throw new Error(`Story missed: ${missing.join(", ")}`);
+  }
+  if (missingLines.length) {
+    throw new Error(`Story missed designated lines: ${missingLines.map((line) => line.text).join(", ")}`);
   }
 
   return lines;
 }
 
-function localStory(phrases) {
+function localStory(phrases, designatedLines = []) {
   const characterSlots = Array.from({ length: SLOT_COUNT - 1 }, (_, index) => index + 2);
-  const titleSeed = phrases[0] || "the hidden song";
+  const titleSeed = phrases[0] || designatedLines[0]?.text || "the suspiciously tiny kazoo";
   const lines = [
     {
       slot: 1,
-      text: `Tonight, ${displayName(slots[0])} opened the curtain on a story about ${titleSeed}.`
+      text: `${displayName(slots[0])} announced a very serious meeting about ${titleSeed}, then immediately lost the agenda.`
     },
     {
       slot: 2,
-      text: `${displayName(slots[1])} stepped forward and promised that everyone would get a turn.`
+      text: `${displayName(slots[1])} whispered that the agenda was probably wearing tiny sunglasses.`
     }
   ];
+
+  designatedLines.forEach((line, index) => {
+    lines.push({
+      slot: 1,
+      text: `${displayName(slots[0])} pointed at ${line.speaker} like this explained absolutely everything.`
+    });
+    lines.push({
+      slot: line.slot,
+      text: line.text
+    });
+    if (index === 0) {
+      lines.push({
+        slot: characterSlots[index % characterSlots.length],
+        text: "Nobody knew what that meant, but everyone nodded like furniture was watching."
+      });
+    }
+  });
 
   phrases.forEach((phrase, index) => {
     const slot = characterSlots[index % characterSlots.length];
     const speaker = displayName(slots[slot - 1]);
     lines.push({
       slot,
-      text: `${speaker} said, "${phrase}," and the room changed direction.`
+      text: `${speaker} said, "${phrase}," and the room immediately voted to blame the sandwich.`
     });
     lines.push({
       slot: 1,
-      text: `The narrator watched voice ${slot} carry that phrase into the next scene.`
+      text: `${displayName(slots[0])} wrote that down as evidence, then underlined the sandwich twice.`
     });
   });
 
   lines.push({
     slot: characterSlots[(phrases.length + 1) % characterSlots.length],
-    text: "By the end, every voice had found a place in the same strange little adventure."
+    text: "In the end, the agenda returned and demanded a snack break."
   });
   lines.push({
     slot: 1,
-    text: "And that is where the story stopped, waiting for the next recording."
+    text: `${displayName(slots[0])} declared the meeting a success, mostly because nobody had to understand it.`
   });
 
   return lines;
@@ -472,17 +519,18 @@ function localStory(phrases) {
 
 async function makeStory() {
   const phrases = getPhrases();
+  const designatedLines = designatedStoryLines.length ? designatedStoryLines : getDesignatedLines();
   tellStory.disabled = true;
   stopSpeech();
   storyStatus.textContent = "Writing...";
 
   try {
-    const llmLines = await callStoryEndpoint(phrases);
-    transcript = llmLines || localStory(phrases);
+    const llmLines = await callStoryEndpoint(phrases, designatedLines);
+    transcript = llmLines || localStory(phrases, designatedLines);
     renderTranscript(transcript);
     storyStatus.textContent = llmLines ? "Transcript from LLM" : "Transcript ready";
   } catch (error) {
-    transcript = localStory(phrases);
+    transcript = localStory(phrases, designatedLines);
     renderTranscript(transcript);
     storyStatus.textContent = `Local transcript used: ${error.message}`;
   } finally {
@@ -537,6 +585,28 @@ function playTranscript() {
   stopSpeech();
   storyStatus.textContent = "Playing";
   speakTranscriptLine();
+}
+
+async function addTextToStory(index) {
+  const slot = slots[index];
+  const text = slot.text.trim();
+
+  if (!text) {
+    window.alert("Write text in this voice slot first.");
+    return;
+  }
+
+  transcript.push({
+    slot: index + 1,
+    text
+  });
+  designatedStoryLines.push({
+    slot: index + 1,
+    speaker: displayName(slot),
+    text
+  });
+  renderTranscript(transcript);
+  storyStatus.textContent = "Line added";
 }
 
 async function syncVoiceboxProfile(index) {
@@ -638,6 +708,7 @@ function renderSlot(slot) {
   const referenceText = fragment.querySelector(".reference-text");
   const fileInput = fragment.querySelector(".voice-file");
   const playButton = fragment.querySelector(".play-button");
+  const addStoryButton = fragment.querySelector(".add-story-button");
   const transcribeButton = fragment.querySelector(".transcribe-button");
   const syncButton = fragment.querySelector(".sync-button");
   const audio = fragment.querySelector(".reference-audio");
@@ -694,6 +765,7 @@ function renderSlot(slot) {
   });
 
   playButton.addEventListener("click", () => playSlot(slot.index));
+  addStoryButton.addEventListener("click", () => addTextToStory(slot.index));
   transcribeButton.addEventListener("click", () => transcribeReference(slot.index));
   syncButton.addEventListener("click", () => syncVoiceboxProfile(slot.index));
 

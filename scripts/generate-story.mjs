@@ -23,17 +23,36 @@ function normalizeVoices(input) {
   });
 }
 
-function storyPrompt({ phrases, voices }) {
+function normalizeDesignatedLines(input) {
+  const lines = Array.isArray(input) ? input : [];
+  return lines
+    .map((line) => {
+      const slot = Number(line.slot || line.voice || line.voiceSlot || line.speakerSlot);
+      return {
+        slot: Number.isInteger(slot) && slot >= 1 && slot <= 9 ? slot : 2,
+        speaker: String(line.speaker || line.name || "").trim(),
+        text: String(line.text || line.line || line.dialogue || "").trim()
+      };
+    })
+    .filter((line) => line.text);
+}
+
+function storyPrompt({ phrases, voices, designatedLines }) {
   return [
-    "Write a short, vivid audio-drama transcript.",
-    "Voice slot 1 is the narrator. Use slot 1 only for narration.",
+    "Write a very short, very funny audio-drama transcript.",
+    "Keep it tight: 8 to 14 total lines.",
+    "Make the humor specific, silly, and punchy. Avoid generic adventure filler.",
+    "Voice slot 1 is the narrator. Use slot 1 for narration, setup, and reactions.",
     "Voice slots 2 through 9 are characters. Use those slots for dialogue.",
     "Every required phrase must appear exactly as written in at least one character dialogue line, never only in narration.",
+    "Every designated line must appear exactly as written at least once, spoken by its assigned slot.",
+    "You may add short setup, reaction, and button lines around the designated lines.",
     "Keep each line concise enough for spoken playback.",
     "Return JSON only with this exact shape:",
     "{\"transcript\":[{\"slot\":1,\"text\":\"...\"},{\"slot\":2,\"text\":\"...\"}]}",
     `Voices: ${JSON.stringify(voices)}`,
-    `Required phrases: ${JSON.stringify(phrases)}`
+    `Required phrases: ${JSON.stringify(phrases)}`,
+    `Designated lines: ${JSON.stringify(designatedLines)}`
   ].join("\n");
 }
 
@@ -76,13 +95,23 @@ function missingPhrases(lines, phrases) {
   return phrases.filter((phrase) => !characterText.includes(phrase.toLowerCase()));
 }
 
-export async function generateStory({ phrases: phraseInput, voices: voiceInput }) {
+function missingDesignatedLines(lines, designatedLines) {
+  const storyText = lines
+    .map((line) => `${line.slot}: ${line.text}`)
+    .join("\n")
+    .toLowerCase();
+
+  return designatedLines.filter((line) => !storyText.includes(line.text.toLowerCase()));
+}
+
+export async function generateStory({ phrases: phraseInput, voices: voiceInput, designatedLines: designatedInput }) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not set");
   }
 
   const phrases = normalizePhrases(phraseInput);
   const voices = normalizeVoices(voiceInput);
+  const designatedLines = normalizeDesignatedLines(designatedInput);
   const response = await fetch(API_URL, {
     method: "POST",
     headers: {
@@ -91,7 +120,7 @@ export async function generateStory({ phrases: phraseInput, voices: voiceInput }
     },
     body: JSON.stringify({
       model: MODEL,
-      input: storyPrompt({ phrases, voices })
+      input: storyPrompt({ phrases, voices, designatedLines })
     })
   });
 
@@ -104,9 +133,13 @@ export async function generateStory({ phrases: phraseInput, voices: voiceInput }
   const parsed = JSON.parse(extractOutputText(payload));
   const transcript = normalizeTranscript(parsed);
   const missing = missingPhrases(transcript, phrases);
+  const missingLines = missingDesignatedLines(transcript, designatedLines);
 
   if (missing.length) {
     throw new Error(`OpenAI transcript missed required phrases: ${missing.join(", ")}`);
+  }
+  if (missingLines.length) {
+    throw new Error(`OpenAI transcript missed designated lines: ${missingLines.map((line) => line.text).join(", ")}`);
   }
 
   return {
