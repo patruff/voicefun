@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>VoiceFun</title>
     <meta name="description" content="A 3 x 3 voice board for WAV reference clips and text playback.">
-    <link rel="stylesheet" href="styles.css?v=stitched-story-audio">
+    <link rel="stylesheet" href="styles.css?v=voice-presets">
   </head>
   <body>
     <header class="app-header">
@@ -81,6 +81,13 @@
         </label>
 
         <label>
+          Preset
+          <select class="voice-preset">
+            <option value="">Custom voice</option>
+          </select>
+        </label>
+
+        <label>
           Text
           <textarea class="voice-text" rows="4" placeholder="Write text for this voice to play."></textarea>
         </label>
@@ -106,6 +113,6 @@
       </article>
     </template>
 
-    <script src="app.js?v=stitched-story-audio"></script>
+    <script src="app.js?v=voice-presets"></script>
   </body>
 </html>

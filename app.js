@@ -7,6 +7,43 @@ const DEFAULT_VOICEBOX_URL = "http://127.0.0.1:17493";
 const DEFAULT_VOICEBOX_MODEL_SIZE = "0.6B";
 const STORY_ENDPOINT_KEY = "voicefun-story-endpoint";
 const VOICEBOX_URL_KEY = "voicefun-voicebox-url";
+const VOICE_PRESETS = [
+  {
+    id: "aiden",
+    name: "Aiden",
+    referenceText: "Hi I’m Aiden and I live in Delaware. And my country that I live in is the United States of America and I love my brother Logan."
+  },
+  {
+    id: "peppa",
+    name: "Peppa",
+    referenceText: "Oooh, maybe at this restaurant the food is pretend. Hmmm, very much tasty food actually."
+  },
+  {
+    id: "logan",
+    name: "Logan",
+    referenceText: "Hi my name is Logan. I like hiding in closets and I live in closeton. It’s a big place where there’s a lot of closets and there’s monsters in the closets sometimes and they kill you."
+  },
+  {
+    id: "uncle-pat",
+    name: "Uncle Pat",
+    referenceText: "I made this app, yeah, it's pretty good. Homeboy. Home skillet. Homie. Well, hope you like it. Uncle Kevin is really good, but Uncle Pat isn't bad."
+  },
+  {
+    id: "grandpa-joe",
+    name: "Grandpa Joe",
+    referenceText: "Voice, you ain't clonin' my voice. You clone my voice then you're gonna have it all over the internet or something like that and then I'm gonna be locked up for child abuse or something."
+  },
+  {
+    id: "bandit",
+    name: "Bandit From Bluey",
+    referenceText: "Once upon a time there were three bears: Daddy bear, Mommy bear, and baby bear. Mamma bear made some porridge and in a really clear voice said \"look everyone it's hot okay, wait til it's cooled down\" but no one was listening, baby bear was on a screen watching something"
+  },
+  {
+    id: "gandalf",
+    name: "Gandalf",
+    referenceText: "It says one ring to rule them all, one ring to find them, one ring to bring them all, and in the darkness bind them"
+  }
+];
 
 const board = document.querySelector("#voiceBoard");
 const template = document.querySelector("#voiceSlotTemplate");
@@ -113,6 +150,13 @@ function displayName(slot) {
   if (slot?.name) return slot.name;
   if (slot?.index === 0) return "Narrator";
   return `Character ${slot.index}`;
+}
+
+function presetForSlot(slot) {
+  return VOICE_PRESETS.find((preset) => (
+    preset.name === slot.name &&
+    preset.referenceText === slot.referenceText
+  ));
 }
 
 async function persistField(index, updates) {
@@ -886,6 +930,7 @@ function renderSlot(slot) {
   const number = fragment.querySelector(".slot-number");
   const status = fragment.querySelector(".slot-status");
   const nameInput = fragment.querySelector(".voice-name");
+  const presetSelect = fragment.querySelector(".voice-preset");
   const textInput = fragment.querySelector(".voice-text");
   const referenceText = fragment.querySelector(".reference-text");
   const fileInput = fragment.querySelector(".voice-file");
@@ -899,6 +944,13 @@ function renderSlot(slot) {
   article.dataset.slot = String(slot.index + 1);
   number.textContent = slot.index === 0 ? "Voice 1 · Narrator" : `Voice ${slot.index + 1} · Character`;
   nameInput.value = slot.name;
+  for (const preset of VOICE_PRESETS) {
+    const option = document.createElement("option");
+    option.value = preset.id;
+    option.textContent = preset.name;
+    presetSelect.append(option);
+  }
+  presetSelect.value = presetForSlot(slot)?.id || "";
   textInput.value = slot.text;
   referenceText.value = slot.referenceText || "";
   status.textContent = hasVoiceboxProfile(slot) ? "Voicebox ready" : slot.blob ? "Reference ready" : "Empty";
@@ -912,7 +964,23 @@ function renderSlot(slot) {
   }
 
   nameInput.addEventListener("change", () => {
+    presetSelect.value = "";
     persistField(slot.index, { name: nameInput.value.trim() });
+  });
+
+  presetSelect.addEventListener("change", async () => {
+    const preset = VOICE_PRESETS.find((item) => item.id === presetSelect.value);
+    if (!preset) return;
+
+    nameInput.value = preset.name;
+    referenceText.value = preset.referenceText;
+    await persistField(slot.index, {
+      name: preset.name,
+      referenceText: preset.referenceText,
+      voiceboxProfileId: "",
+      voiceboxProfileName: ""
+    });
+    status.textContent = slot.blob ? "Reference ready" : "Preset ready";
   });
 
   textInput.addEventListener("input", () => {
@@ -920,6 +988,7 @@ function renderSlot(slot) {
   });
 
   referenceText.addEventListener("input", () => {
+    presetSelect.value = "";
     persistField(slot.index, { referenceText: referenceText.value });
   });
 
